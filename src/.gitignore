@@ -1,0 +1,33 @@
+# Ignore node_modules and dist folders in both backend and frontend
+/backend/node_modules/
+/frontend/node_modules/
+/backend/dist/
+/frontend/dist/
+/frontend/public/
+
+# IDE and OS files
+.vs/
+.vscode/
+.idea/
+.vs2019/
+*.suo
+*.user*
+*.userosscache
+*.dbmdl
+**/bin/
+**/obj/
+artifacts/
+project.lock.json
+project.fragment.lock.json
+_*_migrations/
+npm-debug.log*
+yarn-error.log*
+*.vsix
+.vscode-test/
+*.pdb
+*.ipdb
+*.zip
+*.tar.gz
+.DS_Store
+Thumbs.db
+ehthumbs.db

@@ -1,0 +1,48 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{D4132BA6-F085-42AF-B50F-5805705B5CD5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InvoiceEasy.Application", "InvoiceEasy.Application\InvoiceEasy.Application.csproj", "{308D874F-3009-49B7-BF6C-25B5E3F462F3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InvoiceEasy.Domain", "InvoiceEasy.Domain\InvoiceEasy.Domain.csproj", "{1CE3B5AE-23B2-4C17-B17F-6C49A0C606D4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InvoiceEasy.Infrastructure", "InvoiceEasy.Infrastructure\InvoiceEasy.Infrastructure.csproj", "{FA60779E-964D-463C-8C42-85BA3FF7AF8B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InvoiceEasy.WebApi", "InvoiceEasy.WebApi\InvoiceEasy.WebApi.csproj", "{CDFB59BB-FA62-4AE8-9CD4-43DBF10EA485}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{308D874F-3009-49B7-BF6C-25B5E3F462F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{308D874F-3009-49B7-BF6C-25B5E3F462F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{308D874F-3009-49B7-BF6C-25B5E3F462F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{308D874F-3009-49B7-BF6C-25B5E3F462F3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1CE3B5AE-23B2-4C17-B17F-6C49A0C606D4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1CE3B5AE-23B2-4C17-B17F-6C49A0C606D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1CE3B5AE-23B2-4C17-B17F-6C49A0C606D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1CE3B5AE-23B2-4C17-B17F-6C49A0C606D4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FA60779E-964D-463C-8C42-85BA3FF7AF8B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FA60779E-964D-463C-8C42-85BA3FF7AF8B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FA60779E-964D-463C-8C42-85BA3FF7AF8B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FA60779E-964D-463C-8C42-85BA3FF7AF8B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CDFB59BB-FA62-4AE8-9CD4-43DBF10EA485}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CDFB59BB-FA62-4AE8-9CD4-43DBF10EA485}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CDFB59BB-FA62-4AE8-9CD4-43DBF10EA485}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CDFB59BB-FA62-4AE8-9CD4-43DBF10EA485}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{308D874F-3009-49B7-BF6C-25B5E3F462F3} = {D4132BA6-F085-42AF-B50F-5805705B5CD5}
+		{1CE3B5AE-23B2-4C17-B17F-6C49A0C606D4} = {D4132BA6-F085-42AF-B50F-5805705B5CD5}
+		{FA60779E-964D-463C-8C42-85BA3FF7AF8B} = {D4132BA6-F085-42AF-B50F-5805705B5CD5}
+		{CDFB59BB-FA62-4AE8-9CD4-43DBF10EA485} = {D4132BA6-F085-42AF-B50F-5805705B5CD5}
+	EndGlobalSection
+EndGlobal
