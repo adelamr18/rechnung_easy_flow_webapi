@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using InvoiceEasy.Domain.Entities;
+using Microsoft.Extensions.Configuration;
 
 namespace InvoiceEasy.Infrastructure.Services;
 

@@ -115,9 +115,9 @@ public class PaymentsController : ControllerBase
         else if (stripeEvent.Type == "invoice.paid")
         {
             var invoice = stripeEvent.Data.Object as Invoice;
-            if (invoice?.Subscription != null)
+            if (invoice?.Subscription != null && !string.IsNullOrEmpty(invoice.Subscription.Id))
             {
-                var subscription = await new SubscriptionService().GetAsync(invoice.Subscription);
+                var subscription = await new SubscriptionService().GetAsync(invoice.Subscription.Id);
                 var userIdStr = subscription.Metadata.GetValueOrDefault("userId");
                 if (!string.IsNullOrEmpty(userIdStr) && Guid.TryParse(userIdStr, out var userId))
                 {
@@ -128,10 +128,13 @@ public class PaymentsController : ControllerBase
                         await _userRepository.UpdateAsync(user);
 
                         var payment = await _paymentRepository.GetByStripeSubscriptionIdAsync(subscription.Id);
+                        var currentPeriodEnd = subscription.CurrentPeriodEnd != default(DateTime) 
+                            ? subscription.CurrentPeriodEnd 
+                            : DateTime.UtcNow.AddMonths(1);
 
                         if (payment != null)
                         {
-                            payment.CurrentPeriodEnd = DateTimeOffset.FromUnixTimeSeconds(subscription.CurrentPeriodEnd).DateTime;
+                            payment.CurrentPeriodEnd = currentPeriodEnd;
                             payment.Status = "active";
                             await _paymentRepository.UpdateAsync(payment);
                         }
@@ -143,7 +146,7 @@ public class PaymentsController : ControllerBase
                                 Provider = "stripe",
                                 Status = "active",
                                 StripeSubscriptionId = subscription.Id,
-                                CurrentPeriodEnd = DateTimeOffset.FromUnixTimeSeconds(subscription.CurrentPeriodEnd).DateTime
+                                CurrentPeriodEnd = currentPeriodEnd
                             });
                         }
                     }
@@ -165,13 +168,13 @@ public class PaymentsController : ControllerBase
             return BadRequest(new { error = "No active subscription found" });
 
         var subscription = await new SubscriptionService().GetAsync(payment.StripeSubscriptionId);
-        var options = new BillingPortalSessionCreateOptions
+        var options = new Stripe.BillingPortal.SessionCreateOptions
         {
             Customer = subscription.CustomerId,
             ReturnUrl = _configuration["FRONTEND_URL"] ?? "http://localhost:5173/settings"
         };
 
-        var service = new BillingPortalSessionService();
+        var service = new Stripe.BillingPortal.SessionService();
         var session = await service.CreateAsync(options);
 
         return Ok(new { url = session.Url });
