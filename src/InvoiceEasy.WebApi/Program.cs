@@ -1,4 +1,6 @@
 using System.Text;
+using Azure;
+using Azure.AI.DocumentIntelligence;
 using InvoiceEasy.Application.Services;
 using InvoiceEasy.Domain.Interfaces;
 using InvoiceEasy.Domain.Interfaces.Repositories;
@@ -41,12 +43,22 @@ builder.Services.AddScoped<IReceiptRepository, ReceiptRepository>();
 // Infrastructure Services
 builder.Services.AddScoped<IFileStorage>(_ => new LocalFileStorage(storageRoot));
 builder.Services.AddScoped<IReceiptService, ReceiptService>();
+builder.Services.AddScoped<IInvoiceOcrService, InvoiceOcrService>();
 builder.Services.AddScoped<PdfService>(sp =>
 {
     var fileStorage = sp.GetRequiredService<IFileStorage>();
     return new PdfService(fileStorage, baseUrl);
 });
 builder.Services.AddScoped<JwtService>();
+
+var documentEndpoint = builder.Configuration["DocumentIntelligence:Endpoint"]
+    ?? builder.Configuration["DOCUMENT_INTELLIGENCE_ENDPOINT"];
+var documentKey = builder.Configuration["DocumentIntelligence:ApiKey"]
+    ?? builder.Configuration["DOCUMENT_INTELLIGENCE_KEY"];
+if (!string.IsNullOrWhiteSpace(documentEndpoint) && !string.IsNullOrWhiteSpace(documentKey))
+{
+    builder.Services.AddSingleton(new DocumentIntelligenceClient(new Uri(documentEndpoint), new AzureKeyCredential(documentKey)));
+}
 
 // Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -90,7 +102,7 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // CORS
-var frontendUrlSetting = builder.Configuration["FRONTEND_URL"] ?? "http://localhost:5173";
+var frontendUrlSetting = builder.Configuration["FRONTEND_URL"] ?? "http://localhost:5173;http://localhost:8080";
 var frontendUrls = frontendUrlSetting.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 if (frontendUrls.Length == 0)
 {
@@ -108,7 +120,12 @@ builder.Services.AddCors(options =>
 });
 
 // Stripe
-StripeConfiguration.ApiKey = builder.Configuration["STRIPE_SECRET_KEY"];
+var stripeSecretKey = builder.Configuration["STRIPE_SECRET_KEY"];
+if (string.IsNullOrWhiteSpace(stripeSecretKey))
+{
+    throw new InvalidOperationException("STRIPE_SECRET_KEY not configured. Set it to your Stripe test or live secret key.");
+}
+StripeConfiguration.ApiKey = stripeSecretKey;
 
 var app = builder.Build();
 

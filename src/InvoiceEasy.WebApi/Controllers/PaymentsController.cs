@@ -1,5 +1,6 @@
 using InvoiceEasy.Domain.Interfaces;
 using InvoiceEasy.WebApi.Extensions;
+using InvoiceEasy.WebApi.DTOs.Payments;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Stripe;
@@ -35,7 +36,9 @@ public class PaymentsController : ControllerBase
         if (user == null)
             return NotFound();
 
-        var frontendUrl = _configuration["FRONTEND_URL"] ?? "http://localhost:5173";
+        var frontendUrl = GetFrontendBaseUrl();
+
+        var baseUrl = GetFrontendBaseUrl();
 
         var options = new SessionCreateOptions
         {
@@ -50,9 +53,9 @@ public class PaymentsController : ControllerBase
                         ProductData = new SessionLineItemPriceDataProductDataOptions
                         {
                             Name = "InvoiceEasy Pro",
-                            Description = "Unlimited invoices and expenses"
+                            Description = "Unlimited invoices, 15 expenses/month"
                         },
-                        UnitAmount = 700, // €7.00
+                        UnitAmount = 1000, // €10.00
                         Recurring = new SessionLineItemPriceDataRecurringOptions
                         {
                             Interval = "month"
@@ -62,12 +65,66 @@ public class PaymentsController : ControllerBase
                 }
             },
             Mode = "subscription",
-            SuccessUrl = $"{frontendUrl}/settings?success=true",
-            CancelUrl = $"{frontendUrl}/settings?canceled=true",
+            SuccessUrl = $"{baseUrl}/settings?success=true&session_id={{CHECKOUT_SESSION_ID}}",
+            CancelUrl = $"{baseUrl}/settings?canceled=true",
             CustomerEmail = user.Email,
             Metadata = new Dictionary<string, string>
             {
-                { "userId", userId.ToString() }
+                { "userId", userId.ToString() },
+                { "plan", "pro" }
+            }
+        };
+
+        var service = new SessionService();
+        var session = await service.CreateAsync(options);
+
+        return Ok(new { url = session.Url, sessionId = session.Id });
+    }
+
+    [HttpPost("checkout/elite")]
+    [Authorize]
+    public async Task<IActionResult> CreateEliteCheckout()
+    {
+        var userId = User.GetUserId();
+        var user = await _userRepository.GetByIdAsync(userId);
+
+        if (user == null)
+            return NotFound();
+
+        var baseUrl = GetFrontendBaseUrl();
+
+        var options = new SessionCreateOptions
+        {
+            PaymentMethodTypes = new List<string> { "card" },
+            LineItems = new List<SessionLineItemOptions>
+            {
+                new SessionLineItemOptions
+                {
+                    PriceData = new SessionLineItemPriceDataOptions
+                    {
+                        Currency = "eur",
+                        ProductData = new SessionLineItemPriceDataProductDataOptions
+                        {
+                            Name = "InvoiceEasy Elite",
+                            Description = "Unlimited invoices & expenses, advanced automation"
+                        },
+                        UnitAmount = 2000, // €20.00
+                        Recurring = new SessionLineItemPriceDataRecurringOptions
+                        {
+                            Interval = "month"
+                        }
+                    },
+                    Quantity = 1
+                }
+            },
+            Mode = "subscription",
+            SuccessUrl = $"{baseUrl}/settings?success=true&session_id={{CHECKOUT_SESSION_ID}}",
+            CancelUrl = $"{baseUrl}/settings?canceled=true",
+            CustomerEmail = user.Email,
+            Metadata = new Dictionary<string, string>
+            {
+                { "userId", userId.ToString() },
+                { "plan", "elite" }
             }
         };
 
@@ -107,7 +164,7 @@ public class PaymentsController : ControllerBase
                 var user = await _userRepository.GetByIdAsync(userId);
                 if (user != null)
                 {
-                    user.Plan = "pro";
+                    user.Plan = session.Metadata.GetValueOrDefault("plan") ?? "pro";
                     await _userRepository.UpdateAsync(user);
                 }
             }
@@ -124,10 +181,10 @@ public class PaymentsController : ControllerBase
                     var user = await _userRepository.GetByIdAsync(userId);
                     if (user != null)
                     {
-                        user.Plan = "pro";
+                        user.Plan = subscription.Metadata.GetValueOrDefault("plan") ?? "pro";
                         await _userRepository.UpdateAsync(user);
 
-                        var payment = await _paymentRepository.GetByStripeSubscriptionIdAsync(subscription.Id);
+                                var payment = await _paymentRepository.GetByStripeSubscriptionIdAsync(subscription.Id);
                         var currentPeriodEnd = subscription.CurrentPeriodEnd != default(DateTime) 
                             ? subscription.CurrentPeriodEnd 
                             : DateTime.UtcNow.AddMonths(1);
@@ -171,7 +228,7 @@ public class PaymentsController : ControllerBase
         var options = new Stripe.BillingPortal.SessionCreateOptions
         {
             Customer = subscription.CustomerId,
-            ReturnUrl = _configuration["FRONTEND_URL"] ?? "http://localhost:5173/settings"
+            ReturnUrl = GetFrontendBaseUrl() + "/settings"
         };
 
         var service = new Stripe.BillingPortal.SessionService();
@@ -179,5 +236,74 @@ public class PaymentsController : ControllerBase
 
         return Ok(new { url = session.Url });
     }
-}
 
+    [HttpPost("confirm")]
+    [Authorize]
+    public async Task<IActionResult> ConfirmSession([FromBody] ConfirmSessionRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.SessionId))
+        {
+            return BadRequest(new { error = "sessionId is required" });
+        }
+
+        var session = await new SessionService().GetAsync(request.SessionId);
+        if (session == null)
+        {
+            return NotFound(new { error = "Session not found" });
+        }
+
+        if (!session.Metadata.TryGetValue("userId", out var userIdStr) ||
+            !Guid.TryParse(userIdStr, out var sessionUserId))
+        {
+            return BadRequest(new { error = "Session missing user metadata" });
+        }
+
+        var currentUserId = User.GetUserId();
+        if (currentUserId != sessionUserId)
+        {
+            return Forbid();
+        }
+
+        if (!session.Metadata.TryGetValue("plan", out var plan) || string.IsNullOrWhiteSpace(plan))
+        {
+            return Ok(new { plan = plan });
+        }
+
+        var user = await _userRepository.GetByIdAsync(currentUserId);
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found" });
+        }
+
+        var normalizedPlan = plan.ToLowerInvariant();
+
+        if (!string.Equals(user.Plan, normalizedPlan, StringComparison.OrdinalIgnoreCase))
+        {
+            user.Plan = normalizedPlan;
+            await _userRepository.UpdateAsync(user);
+        }
+
+        return Ok(new { plan = user.Plan });
+    }
+
+    private string GetFrontendBaseUrl()
+    {
+        var allowed = (_configuration["FRONTEND_URL"] ?? string.Empty)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+        var requestOrigin = Request.Headers["Origin"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(requestOrigin) &&
+            (allowed.Count == 0 || allowed.Contains(requestOrigin, StringComparer.OrdinalIgnoreCase)))
+        {
+            return requestOrigin.TrimEnd('/');
+        }
+
+        if (allowed.Count > 0)
+        {
+            return allowed[0].TrimEnd('/');
+        }
+
+        return "http://localhost:5173";
+    }
+}
