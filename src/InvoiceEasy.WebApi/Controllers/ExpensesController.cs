@@ -1,3 +1,4 @@
+using System.Globalization;
 using InvoiceEasy.Domain.Interfaces;
 using InvoiceEasy.WebApi.DTOs;
 using InvoiceEasy.WebApi.Extensions;
@@ -36,8 +37,8 @@ public class ExpensesController : ControllerBase
         if (user == null) return NotFound();
 
         // Check quota
-        var currentMonth = DateTime.UtcNow.Date;
-        var startOfMonth = new DateTime(currentMonth.Year, currentMonth.Month, 1);
+        var utcNow = DateTime.UtcNow;
+        var startOfMonth = new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         
         if (user.Plan != "pro")
         {
@@ -62,10 +63,15 @@ public class ExpensesController : ControllerBase
         if (!allowedTypes.Contains(file.ContentType.ToLower()))
             return BadRequest(new { error = "Invalid file type. Only images are allowed." });
 
+        if (!TryParseAmount(amountStr, out var parsedAmount))
+        {
+            return BadRequest(new { error = "Invalid amount format." });
+        }
+
         var expense = new Domain.Entities.Expense
         {
             UserId = userId,
-            Amount = decimal.TryParse(amountStr, out var amt) ? amt : 0,
+            Amount = parsedAmount,
             Note = note,
             ExpenseDate = !string.IsNullOrEmpty(expenseDateStr) && DateOnly.TryParse(expenseDateStr, out var date) 
                 ? date 
@@ -142,5 +148,23 @@ public class ExpensesController : ControllerBase
         await _expenseRepository.DeleteAsync(expense);
         return NoContent();
     }
-}
 
+    private static bool TryParseAmount(string amountInput, out decimal amount)
+    {
+        amount = 0;
+        if (string.IsNullOrWhiteSpace(amountInput))
+        {
+            return true;
+        }
+
+        var sanitized = amountInput.Trim()
+            .Replace(" ", string.Empty)
+            .Replace("\u00A0", string.Empty); // non-breaking space
+
+        var styles = NumberStyles.Number | NumberStyles.AllowCurrencySymbol;
+
+        return decimal.TryParse(sanitized, styles, CultureInfo.InvariantCulture, out amount) ||
+               decimal.TryParse(sanitized, styles, CultureInfo.GetCultureInfo("de-DE"), out amount) ||
+               decimal.TryParse(sanitized, styles, CultureInfo.CurrentCulture, out amount);
+    }
+}

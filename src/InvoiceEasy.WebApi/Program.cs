@@ -1,6 +1,10 @@
 using System.Text;
+using InvoiceEasy.Application.Services;
 using InvoiceEasy.Domain.Interfaces;
+using InvoiceEasy.Domain.Interfaces.Repositories;
+using InvoiceEasy.Domain.Interfaces.Services;
 using InvoiceEasy.Infrastructure.Data;
+using InvoiceEasy.Infrastructure.Data.Repositories;
 using InvoiceEasy.Infrastructure.Repositories;
 using InvoiceEasy.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -32,9 +36,11 @@ builder.Services.AddScoped<IInvoiceRepository, InvoiceRepository>();
 builder.Services.AddScoped<IExpenseRepository, ExpenseRepository>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+builder.Services.AddScoped<IReceiptRepository, ReceiptRepository>();
 
 // Infrastructure Services
 builder.Services.AddScoped<IFileStorage>(_ => new LocalFileStorage(storageRoot));
+builder.Services.AddScoped<IReceiptService, ReceiptService>();
 builder.Services.AddScoped<PdfService>(sp =>
 {
     var fileStorage = sp.GetRequiredService<IFileStorage>();
@@ -84,12 +90,17 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // CORS
-var frontendUrl = builder.Configuration["FRONTEND_URL"] ?? "http://localhost:5173";
+var frontendUrlSetting = builder.Configuration["FRONTEND_URL"] ?? "http://localhost:5173";
+var frontendUrls = frontendUrlSetting.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+if (frontendUrls.Length == 0)
+{
+    frontendUrls = new[] { "http://localhost:5173" };
+}
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(frontendUrl)
+        policy.WithOrigins(frontendUrls)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
