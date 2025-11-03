@@ -40,8 +40,8 @@ public class InvoicesController : ControllerBase
         if (user == null) return NotFound();
 
         // Check quota
-        var currentMonth = DateTime.UtcNow.Date;
-        var startOfMonth = new DateTime(currentMonth.Year, currentMonth.Month, 1);
+        var utcNow = DateTime.UtcNow;
+        var startOfMonth = new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         
         if (user.Plan != "pro")
         {
@@ -135,4 +135,3 @@ public class InvoicesController : ControllerBase
         return NoContent();
     }
 }
-

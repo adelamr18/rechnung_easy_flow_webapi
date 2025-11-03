@@ -1,4 +1,6 @@
 using InvoiceEasy.Domain.Entities;
+using InvoiceEasy.Domain.Models;
+using InvoiceEasy.Infrastructure.Data.Configurations;
 using Microsoft.EntityFrameworkCore;
 
 namespace InvoiceEasy.Infrastructure.Data;
@@ -14,10 +16,13 @@ public class ApplicationDbContext : DbContext
     public DbSet<Invoice> Invoices { get; set; }
     public DbSet<Expense> Expenses { get; set; }
     public DbSet<Payment> Payments { get; set; }
+    public DbSet<Receipt> Receipts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.ApplyConfiguration(new ReceiptConfiguration());
 
         // User
         modelBuilder.Entity<User>(entity =>

@@ -29,7 +29,7 @@ public class SummaryController : ControllerBase
         var now = DateTime.UtcNow;
         var targetYear = year ?? now.Year;
         var targetMonth = month ?? now.Month;
-        var startDate = new DateTime(targetYear, targetMonth, 1);
+        var startDate = new DateTime(targetYear, targetMonth, 1, 0, 0, 0, DateTimeKind.Utc);
         var endDate = startDate.AddMonths(1);
 
         var income = await _invoiceRepository.SumAmountByUserIdAndMonthAsync(userId, startDate, endDate);
@@ -41,7 +41,7 @@ public class SummaryController : ControllerBase
         for (int i = 5; i >= 0; i--)
         {
             var monthDate = startDate.AddMonths(-i);
-            var monthStart = new DateTime(monthDate.Year, monthDate.Month, 1);
+            var monthStart = new DateTime(monthDate.Year, monthDate.Month, 1, 0, 0, 0, DateTimeKind.Utc);
             var monthEnd = monthStart.AddMonths(1);
 
             var monthIncome = await _invoiceRepository.SumAmountByUserIdAndMonthAsync(userId, monthStart, monthEnd);
@@ -64,4 +64,3 @@ public class SummaryController : ControllerBase
         });
     }
 }
-

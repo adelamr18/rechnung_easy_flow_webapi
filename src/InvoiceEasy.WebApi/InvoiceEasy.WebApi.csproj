@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\InvoiceEasy.Infrastructure\InvoiceEasy.Infrastructure.csproj" />
+    <ProjectReference Include="..\InvoiceEasy.Application\InvoiceEasy.Application.csproj" />
+    <ProjectReference Include="..\InvoiceEasy.Domain\InvoiceEasy.Domain.csproj" />
   </ItemGroup>
 
 </Project>
