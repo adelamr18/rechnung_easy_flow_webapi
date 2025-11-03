@@ -1,9 +1,12 @@
 using System.Globalization;
+using System.IO;
 using InvoiceEasy.Domain.Interfaces;
+using InvoiceEasy.Domain.Interfaces.Services;
 using InvoiceEasy.WebApi.DTOs;
 using InvoiceEasy.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace InvoiceEasy.WebApi.Controllers;
 
@@ -15,18 +18,24 @@ public class ExpensesController : ControllerBase
     private readonly IExpenseRepository _expenseRepository;
     private readonly IUserRepository _userRepository;
     private readonly IFileStorage _fileStorage;
+    private readonly IReceiptService _receiptService;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<ExpensesController> _logger;
 
     public ExpensesController(
         IExpenseRepository expenseRepository,
         IUserRepository userRepository,
         IFileStorage fileStorage,
-        IConfiguration configuration)
+        IReceiptService receiptService,
+        IConfiguration configuration,
+        ILogger<ExpensesController> logger)
     {
         _expenseRepository = expenseRepository;
         _userRepository = userRepository;
         _fileStorage = fileStorage;
+        _receiptService = receiptService;
         _configuration = configuration;
+        _logger = logger;
     }
 
     [HttpPost]
@@ -40,11 +49,11 @@ public class ExpensesController : ControllerBase
         var utcNow = DateTime.UtcNow;
         var startOfMonth = new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         
-        if (user.Plan != "pro")
+        if (!PlanAllowsUnlimitedExpenses(user.Plan))
         {
             var count = await _expenseRepository.CountByUserIdAndMonthAsync(userId, startOfMonth);
-            if (count >= 10)
-                return BadRequest(new { error = "Expense quota exceeded. Please upgrade to Pro." });
+            if (count >= GetExpenseLimit(user.Plan))
+                return BadRequest(new { error = "Expense quota exceeded. Please upgrade your plan." });
         }
 
         var form = await Request.ReadFormAsync();
@@ -63,23 +72,45 @@ public class ExpensesController : ControllerBase
         if (!allowedTypes.Contains(file.ContentType.ToLower()))
             return BadRequest(new { error = "Invalid file type. Only images are allowed." });
 
-        if (!TryParseAmount(amountStr, out var parsedAmount))
+        TryParseAmount(amountStr, out var parsedAmount);
+        Domain.Models.Receipt? processedReceipt = null;
+        try
         {
-            return BadRequest(new { error = "Invalid amount format." });
+            await using var workingStream = new MemoryStream();
+            await file.CopyToAsync(workingStream);
+            workingStream.Position = 0;
+            processedReceipt = await _receiptService.ProcessReceiptUploadAsync(workingStream, file.FileName);
         }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Receipt OCR failed for user {UserId}", userId);
+        }
+
+        var finalAmount = DetermineExpenseAmount(parsedAmount, processedReceipt);
 
         var expense = new Domain.Entities.Expense
         {
             UserId = userId,
-            Amount = parsedAmount,
+            Amount = finalAmount,
             Note = note,
             ExpenseDate = !string.IsNullOrEmpty(expenseDateStr) && DateOnly.TryParse(expenseDateStr, out var date) 
                 ? date 
                 : DateOnly.FromDateTime(DateTime.UtcNow)
         };
 
-        var receiptPath = await _fileStorage.SaveFileAsync(file.OpenReadStream(), file.FileName, "receipts");
-        expense.ReceiptPath = receiptPath;
+        if (processedReceipt != null)
+        {
+            expense.ReceiptPath = processedReceipt.FilePath;
+            if (string.IsNullOrWhiteSpace(expense.Note) && !string.IsNullOrWhiteSpace(processedReceipt.MerchantName))
+            {
+                expense.Note = processedReceipt.MerchantName;
+            }
+        }
+        else
+        {
+            var receiptPath = await _fileStorage.SaveFileAsync(file.OpenReadStream(), file.FileName, "receipts");
+            expense.ReceiptPath = receiptPath;
+        }
 
         await _expenseRepository.AddAsync(expense);
 
@@ -166,5 +197,65 @@ public class ExpensesController : ControllerBase
         return decimal.TryParse(sanitized, styles, CultureInfo.InvariantCulture, out amount) ||
                decimal.TryParse(sanitized, styles, CultureInfo.GetCultureInfo("de-DE"), out amount) ||
                decimal.TryParse(sanitized, styles, CultureInfo.CurrentCulture, out amount);
+    }
+
+    private static decimal DetermineExpenseAmount(decimal providedAmount, Domain.Models.Receipt? receipt)
+    {
+        decimal detectedAmount = 0;
+
+        if (receipt != null)
+        {
+            if (receipt.TotalAmount.HasValue && receipt.TotalAmount.Value > 0)
+            {
+                detectedAmount = receipt.TotalAmount.Value;
+            }
+            else if (receipt.ExtractedData != null)
+            {
+                if (receipt.ExtractedData.TryGetValue("total", out var totalStr) &&
+                    decimal.TryParse(totalStr, NumberStyles.Number, CultureInfo.InvariantCulture, out var totalParsed))
+                {
+                    detectedAmount = totalParsed;
+                }
+                else if (receipt.ExtractedData.TryGetValue("itemsTotal", out var itemsTotalStr) &&
+                         decimal.TryParse(itemsTotalStr, NumberStyles.Number, CultureInfo.InvariantCulture, out var itemsParsed))
+                {
+                    detectedAmount = itemsParsed;
+                }
+                else if (receipt.ExtractedData.TryGetValue("totalDetectedFromText", out var textTotalStr) &&
+                         decimal.TryParse(textTotalStr, NumberStyles.Number, CultureInfo.InvariantCulture, out var textParsed))
+                {
+                    detectedAmount = textParsed;
+                }
+            }
+        }
+
+        if (providedAmount > 0)
+        {
+            return providedAmount;
+        }
+
+        return detectedAmount > 0 ? detectedAmount : 0;
+    }
+
+    private static bool PlanAllowsUnlimitedExpenses(string plan)
+    {
+        var normalized = (plan ?? "starter").ToLowerInvariant();
+        return normalized switch
+        {
+            "pro" => true,
+            "elite" => true,
+            _ => false
+        };
+    }
+
+    private static int GetExpenseLimit(string plan)
+    {
+        var normalized = (plan ?? "starter").ToLowerInvariant();
+        return normalized switch
+        {
+            "starter" => 5,
+            "free" => 5,
+            _ => 5
+        };
     }
 }

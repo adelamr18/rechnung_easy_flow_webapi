@@ -7,7 +7,7 @@ public class User
     public string PasswordHash { get; set; } = string.Empty;
     public string? CompanyName { get; set; }
     public string Locale { get; set; } = "de";
-    public string Plan { get; set; } = "free";
+    public string Plan { get; set; } = "starter";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation properties
@@ -16,4 +16,3 @@ public class User
     public List<Payment> Payments { get; set; } = new();
     public List<RefreshToken> RefreshTokens { get; set; } = new();
 }
-

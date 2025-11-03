@@ -32,7 +32,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Email).IsRequired().HasMaxLength(255);
             entity.Property(e => e.PasswordHash).IsRequired();
             entity.Property(e => e.Locale).HasDefaultValue("de");
-            entity.Property(e => e.Plan).HasDefaultValue("free");
+            entity.Property(e => e.Plan).HasDefaultValue("starter");
         });
 
         // RefreshToken
@@ -85,4 +85,3 @@ public class ApplicationDbContext : DbContext
         });
     }
 }
-

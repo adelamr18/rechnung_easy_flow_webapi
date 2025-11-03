@@ -42,7 +42,7 @@ public class AuthController : ControllerBase
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
             CompanyName = request.CompanyName,
             Locale = "de",
-            Plan = "free"
+            Plan = "starter"
         };
 
         await _userRepository.AddAsync(user);
@@ -155,4 +155,3 @@ public class AuthController : ControllerBase
         return Ok();
     }
 }
-
