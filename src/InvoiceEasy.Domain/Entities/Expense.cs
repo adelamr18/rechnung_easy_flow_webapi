@@ -10,7 +10,6 @@ public class Expense
     public DateOnly ExpenseDate { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    // Navigation property
     public User User { get; set; } = null!;
 }
 

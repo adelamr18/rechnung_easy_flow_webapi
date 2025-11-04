@@ -9,6 +9,7 @@ using InvoiceEasy.Infrastructure.Data;
 using InvoiceEasy.Infrastructure.Data.Repositories;
 using InvoiceEasy.Infrastructure.Repositories;
 using InvoiceEasy.Infrastructure.Services;
+using InvoiceEasy.WebApi.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -17,7 +18,6 @@ using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configuration
 var jwtSecret = builder.Configuration["JWT_SECRET"] ?? throw new InvalidOperationException("JWT_SECRET not configured");
 var connectionString = builder.Configuration.GetConnectionString("Default") 
     ?? builder.Configuration.GetConnectionString("DefaultConnection") 
@@ -28,11 +28,9 @@ if (string.IsNullOrEmpty(connectionString))
 var baseUrl = builder.Configuration["BASE_URL"] ?? "http://localhost:5000";
 var storageRoot = builder.Configuration["STORAGE_ROOT"] ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 
-// Services
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
-// Repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IInvoiceRepository, InvoiceRepository>();
 builder.Services.AddScoped<IExpenseRepository, ExpenseRepository>();
@@ -40,7 +38,6 @@ builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IReceiptRepository, ReceiptRepository>();
 
-// Infrastructure Services
 builder.Services.AddScoped<IFileStorage>(_ => new LocalFileStorage(storageRoot));
 builder.Services.AddScoped<IReceiptService, ReceiptService>();
 builder.Services.AddScoped<IInvoiceOcrService, InvoiceOcrService>();
@@ -60,7 +57,6 @@ if (!string.IsNullOrWhiteSpace(documentEndpoint) && !string.IsNullOrWhiteSpace(d
     builder.Services.AddSingleton(new DocumentIntelligenceClient(new Uri(documentEndpoint), new AzureKeyCredential(documentKey)));
 }
 
-// Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -101,7 +97,6 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// CORS
 var frontendUrlSetting = builder.Configuration["FRONTEND_URL"] ?? "http://localhost:5173;http://localhost:8080";
 var frontendUrls = frontendUrlSetting.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 if (frontendUrls.Length == 0)
@@ -119,7 +114,6 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Stripe
 var stripeSecretKey = builder.Configuration["STRIPE_SECRET_KEY"];
 if (string.IsNullOrWhiteSpace(stripeSecretKey))
 {
@@ -129,16 +123,15 @@ StripeConfiguration.ApiKey = stripeSecretKey;
 
 var app = builder.Build();
 
-// Migrations
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     db.Database.Migrate();
 }
 
-// Middleware
 app.UseSwagger();
 app.UseSwaggerUI();
+app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();

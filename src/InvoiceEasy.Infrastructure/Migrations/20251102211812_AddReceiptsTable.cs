@@ -4,10 +4,8 @@
 
 namespace InvoiceEasy.Infrastructure.Migrations
 {
-    /// <inheritdoc />
     public partial class AddReceiptsTable : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AlterColumn<string>(
@@ -21,7 +19,6 @@ namespace InvoiceEasy.Infrastructure.Migrations
                 oldDefaultValueSql: "'{}'::jsonb");
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AlterColumn<string>(

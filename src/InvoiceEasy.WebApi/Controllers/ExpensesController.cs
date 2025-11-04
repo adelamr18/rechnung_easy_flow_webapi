@@ -45,7 +45,6 @@ public class ExpensesController : ControllerBase
         var user = await _userRepository.GetByIdAsync(userId);
         if (user == null) return NotFound();
 
-        // Check quota
         var utcNow = DateTime.UtcNow;
         var startOfMonth = new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         
@@ -65,7 +64,7 @@ public class ExpensesController : ControllerBase
         if (file == null || file.Length == 0)
             return BadRequest(new { error = "Receipt file is required" });
 
-        if (file.Length > 5 * 1024 * 1024) // 5MB
+        if (file.Length > 5 * 1024 * 1024)
             return BadRequest(new { error = "File too large. Maximum 5MB." });
 
         var allowedTypes = new[] { "image/jpeg", "image/png", "image/jpg", "image/heic" };
@@ -190,7 +189,7 @@ public class ExpensesController : ControllerBase
 
         var sanitized = amountInput.Trim()
             .Replace(" ", string.Empty)
-            .Replace("\u00A0", string.Empty); // non-breaking space
+            .Replace("\u00A0", string.Empty);
 
         var styles = NumberStyles.Number | NumberStyles.AllowCurrencySymbol;
 

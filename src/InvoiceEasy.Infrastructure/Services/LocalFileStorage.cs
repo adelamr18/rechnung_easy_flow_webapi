@@ -10,7 +10,6 @@ public class LocalFileStorage : IFileStorage
     public LocalFileStorage(string rootPath)
     {
         _rootPath = rootPath;
-        // Ensure directories exist
         Directory.CreateDirectory(Path.Combine(_rootPath, "invoices"));
         Directory.CreateDirectory(Path.Combine(_rootPath, "receipts"));
     }

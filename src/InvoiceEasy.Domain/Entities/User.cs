@@ -10,7 +10,6 @@ public class User
     public string Plan { get; set; } = "starter";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    // Navigation properties
     public List<Invoice> Invoices { get; set; } = new();
     public List<Expense> Expenses { get; set; } = new();
     public List<Payment> Payments { get; set; } = new();

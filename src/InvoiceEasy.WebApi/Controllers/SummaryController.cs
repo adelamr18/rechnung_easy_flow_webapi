@@ -36,7 +36,6 @@ public class SummaryController : ControllerBase
         var expenses = await _expenseRepository.SumAmountByUserIdAndMonthAsync(userId, startDate, endDate);
         var profit = income - expenses;
 
-        // Chart data for last 6 months
         var chartData = new List<ChartDataPoint>();
         for (int i = 5; i >= 0; i--)
         {

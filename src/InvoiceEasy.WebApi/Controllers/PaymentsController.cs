@@ -36,8 +36,6 @@ public class PaymentsController : ControllerBase
         if (user == null)
             return NotFound();
 
-        var frontendUrl = GetFrontendBaseUrl();
-
         var baseUrl = GetFrontendBaseUrl();
 
         var options = new SessionCreateOptions
@@ -55,7 +53,6 @@ public class PaymentsController : ControllerBase
                             Name = "InvoiceEasy Pro",
                             Description = "Unlimited invoices, 15 expenses/month"
                         },
-                        UnitAmount = 1000, // €10.00
                         Recurring = new SessionLineItemPriceDataRecurringOptions
                         {
                             Interval = "month"
@@ -80,7 +77,6 @@ public class PaymentsController : ControllerBase
 
         return Ok(new { url = session.Url, sessionId = session.Id });
     }
-
     [HttpPost("checkout/elite")]
     [Authorize]
     public async Task<IActionResult> CreateEliteCheckout()
@@ -108,7 +104,6 @@ public class PaymentsController : ControllerBase
                             Name = "InvoiceEasy Elite",
                             Description = "Unlimited invoices & expenses, advanced automation"
                         },
-                        UnitAmount = 2000, // €20.00
                         Recurring = new SessionLineItemPriceDataRecurringOptions
                         {
                             Interval = "month"
@@ -304,6 +299,11 @@ public class PaymentsController : ControllerBase
             return allowed[0].TrimEnd('/');
         }
 
-        return "http://localhost:5173";
+        if (Request?.Scheme != null && Request.Host.HasValue)
+        {
+            return $"{Request.Scheme}://{Request.Host}".TrimEnd('/');
+        }
+
+        return "http://localhost:8080";
     }
 }

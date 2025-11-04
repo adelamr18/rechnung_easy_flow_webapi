@@ -9,7 +9,6 @@ public class RefreshToken
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public bool IsRevoked { get; set; } = false;
 
-    // Navigation property
     public User User { get; set; } = null!;
 }
 
