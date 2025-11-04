@@ -11,7 +11,6 @@ public class Payment
     public DateTime? CurrentPeriodEnd { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    // Navigation property
     public User User { get; set; } = null!;
 }
 

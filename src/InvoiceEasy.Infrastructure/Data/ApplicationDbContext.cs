@@ -24,7 +24,6 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.ApplyConfiguration(new ReceiptConfiguration());
 
-        // User
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -35,7 +34,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Plan).HasDefaultValue("starter");
         });
 
-        // RefreshToken
         modelBuilder.Entity<RefreshToken>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -47,7 +45,6 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // Invoice
         modelBuilder.Entity<Invoice>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -60,7 +57,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Amount).HasPrecision(12, 2);
         });
 
-        // Expense
         modelBuilder.Entity<Expense>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -73,7 +69,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Amount).HasPrecision(12, 2);
         });
 
-        // Payment
         modelBuilder.Entity<Payment>(entity =>
         {
             entity.HasKey(e => e.Id);

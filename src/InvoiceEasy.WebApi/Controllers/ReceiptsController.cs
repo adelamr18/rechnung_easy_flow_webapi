@@ -21,7 +21,6 @@ public class ReceiptsController : ControllerBase
     }
 
     [HttpPost("upload")]
-    [RequestSizeLimit(10 * 1024 * 1024)] // 10MB limit
     public async Task<IActionResult> UploadReceipt(IFormFile file)
     {
         try

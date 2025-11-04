@@ -4,10 +4,8 @@
 
 namespace InvoiceEasy.Infrastructure.Migrations
 {
-    /// <inheritdoc />
     public partial class UpdatePlanDefaults : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AlterColumn<string>(
@@ -23,7 +21,6 @@ namespace InvoiceEasy.Infrastructure.Migrations
             migrationBuilder.Sql("UPDATE \"Users\" SET \"Plan\" = 'starter' WHERE \"Plan\" = 'free';");
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AlterColumn<string>(

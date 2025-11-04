@@ -43,7 +43,6 @@ public class InvoicesController : ControllerBase
         var user = await _userRepository.GetByIdAsync(userId);
         if (user == null) return NotFound();
 
-        // Check quota
         var utcNow = DateTime.UtcNow;
         var startOfMonth = new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         
@@ -66,6 +65,7 @@ public class InvoicesController : ControllerBase
 
         await _invoiceRepository.AddAsync(invoice);
 
+        var baseUrl = ResolveBaseUrl();
         string? downloadUrl = null;
         if (PlanAllowsPdfGeneration(user.Plan))
         {
@@ -73,7 +73,6 @@ public class InvoicesController : ControllerBase
             invoice.PdfPath = pdfPath;
             await _invoiceRepository.UpdateAsync(invoice);
 
-            var baseUrl = _configuration["BASE_URL"] ?? "http://localhost:5000";
             downloadUrl = $"{baseUrl}/api/invoices/{invoice.Id}/pdf";
         }
         else
@@ -100,7 +99,7 @@ public class InvoicesController : ControllerBase
         var userId = User.GetUserId();
         var invoices = await _invoiceRepository.GetByUserIdAsync(userId, page, pageSize);
 
-        var baseUrl = _configuration["BASE_URL"] ?? "http://localhost:5000";
+        var baseUrl = ResolveBaseUrl();
         var result = invoices.Select(i => new InvoiceResponse
         {
             Id = i.Id,
@@ -192,6 +191,23 @@ public class InvoicesController : ControllerBase
             return StatusCode(500, new { error = $"Invoice analysis failed: {ex.Message}" });
         }
     }
+
+    private string ResolveBaseUrl()
+    {
+        var configured = _configuration["BASE_URL"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured.TrimEnd('/');
+        }
+
+        if (Request?.Scheme != null && Request.Host.HasValue)
+        {
+            return $"{Request.Scheme}://{Request.Host}".TrimEnd('/');
+        }
+
+        return "http://localhost:5000";
+    }
+
     private static bool PlanAllowsUnlimitedInvoices(string plan)
     {
         var normalized = (plan ?? "starter").ToLowerInvariant();
