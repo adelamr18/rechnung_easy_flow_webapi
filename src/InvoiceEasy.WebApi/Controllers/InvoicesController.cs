@@ -1,3 +1,4 @@
+using InvoiceEasy.Domain.Enums;
 using InvoiceEasy.Domain.Interfaces;
 using InvoiceEasy.Domain.Interfaces.Services;
 using InvoiceEasy.Infrastructure.Services;
@@ -67,12 +68,13 @@ public class InvoicesController : ControllerBase
 
         var baseUrl = ResolveBaseUrl();
         string? downloadUrl = null;
-        if (PlanAllowsPdfGeneration(user.Plan))
+        var automaticTemplate = GetAutomaticTemplateForPlan(user.Plan);
+
+        if (automaticTemplate.HasValue)
         {
-            var pdfPath = await _pdfService.GenerateInvoicePdfAsync(invoice, user);
+            var pdfPath = await _pdfService.GenerateInvoicePdfAsync(invoice, user, automaticTemplate.Value);
             invoice.PdfPath = pdfPath;
             await _invoiceRepository.UpdateAsync(invoice);
-
             downloadUrl = $"{baseUrl}/api/invoices/{invoice.Id}/pdf";
         }
         else
@@ -126,6 +128,34 @@ public class InvoicesController : ControllerBase
 
         var fileStream = await _fileStorage.GetFileAsync(invoice.PdfPath);
         return File(fileStream, "application/pdf", $"invoice_{id}.pdf");
+    }
+
+    [HttpPost("{id}/generate-pdf")]
+    public async Task<IActionResult> GeneratePdf(Guid id, [FromBody] GenerateInvoicePdfRequest? request)
+    {
+        var userId = User.GetUserId();
+        var invoice = await _invoiceRepository.GetByIdAsync(id);
+
+        if (invoice == null || invoice.UserId != userId)
+            return NotFound();
+
+        var user = await _userRepository.GetByIdAsync(userId);
+        if (user == null)
+            return NotFound();
+
+        var template = ResolveTemplateForPlan(user.Plan, request?.Template);
+        var pdfPath = await _pdfService.GenerateInvoicePdfAsync(invoice, user, template);
+
+        invoice.PdfPath = pdfPath;
+        await _invoiceRepository.UpdateAsync(invoice);
+
+        var downloadUrl = $"{ResolveBaseUrl()}/api/invoices/{invoice.Id}/pdf";
+
+        return Ok(new
+        {
+            downloadUrl,
+            template = template.ToString().ToLowerInvariant()
+        });
     }
 
     [HttpDelete("{id}")]
@@ -208,6 +238,53 @@ public class InvoicesController : ControllerBase
         return "http://localhost:5000";
     }
 
+    private static InvoicePdfTemplate? GetAutomaticTemplateForPlan(string plan)
+    {
+        var normalized = (plan ?? "starter").ToLowerInvariant();
+        return normalized switch
+        {
+            "elite" => InvoicePdfTemplate.Elite,
+            "pro" => InvoicePdfTemplate.Advanced,
+            _ => null
+        };
+    }
+
+    private InvoicePdfTemplate ResolveTemplateForPlan(string plan, string? requestedTemplate)
+    {
+        var normalizedPlan = (plan ?? "starter").ToLowerInvariant();
+        var defaultTemplate = normalizedPlan switch
+        {
+            "elite" => InvoicePdfTemplate.Elite,
+            "pro" => InvoicePdfTemplate.Advanced,
+            _ => InvoicePdfTemplate.Basic
+        };
+
+        if (string.IsNullOrWhiteSpace(requestedTemplate))
+        {
+            return defaultTemplate;
+        }
+
+        var normalizedRequest = requestedTemplate.Trim().ToLowerInvariant();
+
+        return normalizedPlan switch
+        {
+            "elite" => normalizedRequest switch
+            {
+                "elite" => InvoicePdfTemplate.Elite,
+                "advanced" => InvoicePdfTemplate.Advanced,
+                "basic" => InvoicePdfTemplate.Basic,
+                _ => defaultTemplate
+            },
+            "pro" => normalizedRequest switch
+            {
+                "advanced" => InvoicePdfTemplate.Advanced,
+                "basic" => InvoicePdfTemplate.Basic,
+                _ => defaultTemplate
+            },
+            _ => InvoicePdfTemplate.Basic
+        };
+    }
+
     private static bool PlanAllowsUnlimitedInvoices(string plan)
     {
         var normalized = (plan ?? "starter").ToLowerInvariant();
@@ -230,14 +307,4 @@ public class InvoicesController : ControllerBase
         };
     }
 
-    private static bool PlanAllowsPdfGeneration(string plan)
-    {
-        var normalized = (plan ?? "starter").ToLowerInvariant();
-        return normalized switch
-        {
-            "pro" => true,
-            "elite" => true,
-            _ => false
-        };
-    }
 }

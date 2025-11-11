@@ -25,7 +25,6 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
 if (string.IsNullOrEmpty(connectionString))
     throw new InvalidOperationException("Connection string 'Default' or 'DefaultConnection' not configured in appsettings.json");
 
-var baseUrl = builder.Configuration["BASE_URL"] ?? "http://localhost:5000";
 var storageRoot = builder.Configuration["STORAGE_ROOT"] ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -44,7 +43,7 @@ builder.Services.AddScoped<IInvoiceOcrService, InvoiceOcrService>();
 builder.Services.AddScoped<PdfService>(sp =>
 {
     var fileStorage = sp.GetRequiredService<IFileStorage>();
-    return new PdfService(fileStorage, baseUrl);
+    return new PdfService(fileStorage);
 });
 builder.Services.AddScoped<JwtService>();
 

@@ -8,6 +8,11 @@ public class CreateInvoiceRequest
     public DateOnly InvoiceDate { get; set; }
 }
 
+public class GenerateInvoicePdfRequest
+{
+    public string? Template { get; set; }
+}
+
 public class InvoiceResponse
 {
     public Guid Id { get; set; }
@@ -19,4 +24,3 @@ public class InvoiceResponse
     public string? DownloadUrl { get; set; }
     public DateTime CreatedAt { get; set; }
 }
-
