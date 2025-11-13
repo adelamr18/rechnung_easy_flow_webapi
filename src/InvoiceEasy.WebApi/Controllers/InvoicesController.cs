@@ -4,6 +4,7 @@ using InvoiceEasy.Domain.Interfaces.Services;
 using InvoiceEasy.Infrastructure.Services;
 using InvoiceEasy.WebApi.DTOs;
 using InvoiceEasy.WebApi.Extensions;
+using InvoiceEasy.WebApi.Helpers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -47,10 +48,10 @@ public class InvoicesController : ControllerBase
         var utcNow = DateTime.UtcNow;
         var startOfMonth = new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         
-        if (!PlanAllowsUnlimitedInvoices(user.Plan))
+        if (!InvoiceControllerHelpers.PlanAllowsUnlimitedInvoices(user.Plan))
         {
             var count = await _invoiceRepository.CountByUserIdAndMonthAsync(userId, startOfMonth);
-            if (count >= GetInvoiceLimit(user.Plan))
+            if (count >= InvoiceControllerHelpers.GetInvoiceLimit(user.Plan))
                 return BadRequest(new { error = "Invoice quota exceeded. Please upgrade your plan." });
         }
 
@@ -61,14 +62,15 @@ public class InvoicesController : ControllerBase
             ServiceDescription = request.ServiceDescription,
             Amount = request.Amount,
             InvoiceDate = request.InvoiceDate,
-            Currency = "EUR"
+            Currency = "EUR",
+            LineItemsJson = InvoiceControllerHelpers.SerializeLineItems(request.Items)
         };
 
         await _invoiceRepository.AddAsync(invoice);
 
-        var baseUrl = ResolveBaseUrl();
+        var baseUrl = InvoiceControllerHelpers.ResolveBaseUrl(Request, _configuration);
         string? downloadUrl = null;
-        var automaticTemplate = GetAutomaticTemplateForPlan(user.Plan);
+        var automaticTemplate = InvoiceControllerHelpers.GetAutomaticTemplateForPlan(user.Plan);
 
         if (automaticTemplate.HasValue)
         {
@@ -91,6 +93,7 @@ public class InvoicesController : ControllerBase
             Currency = invoice.Currency,
             InvoiceDate = invoice.InvoiceDate,
             DownloadUrl = downloadUrl,
+            Items = InvoiceControllerHelpers.DeserializeLineItems(invoice.LineItemsJson),
             CreatedAt = invoice.CreatedAt
         });
     }
@@ -101,7 +104,7 @@ public class InvoicesController : ControllerBase
         var userId = User.GetUserId();
         var invoices = await _invoiceRepository.GetByUserIdAsync(userId, page, pageSize);
 
-        var baseUrl = ResolveBaseUrl();
+        var baseUrl = InvoiceControllerHelpers.ResolveBaseUrl(Request, _configuration);
         var result = invoices.Select(i => new InvoiceResponse
         {
             Id = i.Id,
@@ -111,6 +114,7 @@ public class InvoicesController : ControllerBase
             Currency = i.Currency,
             InvoiceDate = i.InvoiceDate,
             DownloadUrl = string.IsNullOrEmpty(i.PdfPath) ? null : $"{baseUrl}/api/invoices/{i.Id}/pdf",
+            Items = InvoiceControllerHelpers.DeserializeLineItems(i.LineItemsJson),
             CreatedAt = i.CreatedAt
         }).ToList();
 
@@ -143,13 +147,13 @@ public class InvoicesController : ControllerBase
         if (user == null)
             return NotFound();
 
-        var template = ResolveTemplateForPlan(user.Plan, request?.Template);
+        var template = InvoiceControllerHelpers.ResolveTemplateForPlan(user.Plan, request?.Template);
         var pdfPath = await _pdfService.GenerateInvoicePdfAsync(invoice, user, template);
 
         invoice.PdfPath = pdfPath;
         await _invoiceRepository.UpdateAsync(invoice);
 
-        var downloadUrl = $"{ResolveBaseUrl()}/api/invoices/{invoice.Id}/pdf";
+        var downloadUrl = $"{InvoiceControllerHelpers.ResolveBaseUrl(Request, _configuration)}/api/invoices/{invoice.Id}/pdf";
 
         return Ok(new
         {
@@ -220,91 +224,6 @@ public class InvoicesController : ControllerBase
         {
             return StatusCode(500, new { error = $"Invoice analysis failed: {ex.Message}" });
         }
-    }
-
-    private string ResolveBaseUrl()
-    {
-        var configured = _configuration["BASE_URL"];
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return configured.TrimEnd('/');
-        }
-
-        if (Request?.Scheme != null && Request.Host.HasValue)
-        {
-            return $"{Request.Scheme}://{Request.Host}".TrimEnd('/');
-        }
-
-        return "http://localhost:5000";
-    }
-
-    private static InvoicePdfTemplate? GetAutomaticTemplateForPlan(string plan)
-    {
-        var normalized = (plan ?? "starter").ToLowerInvariant();
-        return normalized switch
-        {
-            "elite" => InvoicePdfTemplate.Elite,
-            "pro" => InvoicePdfTemplate.Advanced,
-            _ => null
-        };
-    }
-
-    private InvoicePdfTemplate ResolveTemplateForPlan(string plan, string? requestedTemplate)
-    {
-        var normalizedPlan = (plan ?? "starter").ToLowerInvariant();
-        var defaultTemplate = normalizedPlan switch
-        {
-            "elite" => InvoicePdfTemplate.Elite,
-            "pro" => InvoicePdfTemplate.Advanced,
-            _ => InvoicePdfTemplate.Basic
-        };
-
-        if (string.IsNullOrWhiteSpace(requestedTemplate))
-        {
-            return defaultTemplate;
-        }
-
-        var normalizedRequest = requestedTemplate.Trim().ToLowerInvariant();
-
-        return normalizedPlan switch
-        {
-            "elite" => normalizedRequest switch
-            {
-                "elite" => InvoicePdfTemplate.Elite,
-                "advanced" => InvoicePdfTemplate.Advanced,
-                "basic" => InvoicePdfTemplate.Basic,
-                _ => defaultTemplate
-            },
-            "pro" => normalizedRequest switch
-            {
-                "advanced" => InvoicePdfTemplate.Advanced,
-                "basic" => InvoicePdfTemplate.Basic,
-                _ => defaultTemplate
-            },
-            _ => InvoicePdfTemplate.Basic
-        };
-    }
-
-    private static bool PlanAllowsUnlimitedInvoices(string plan)
-    {
-        var normalized = (plan ?? "starter").ToLowerInvariant();
-        return normalized switch
-        {
-            "pro" => true,
-            "elite" => true,
-            _ => false
-        };
-    }
-
-    private static int GetInvoiceLimit(string plan)
-    {
-        var normalized = (plan ?? "starter").ToLowerInvariant();
-        return normalized switch
-        {
-            "starter" => 5,
-            "free" => 5,
-            _ => 5
-        };
     }
 
 }
