@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using InvoiceEasy.Domain.Entities;
 using InvoiceEasy.Domain.Enums;
 using InvoiceEasy.Domain.Interfaces;
@@ -12,6 +13,14 @@ namespace InvoiceEasy.Infrastructure.Services;
 public class PdfService
 {
     private readonly IFileStorage _fileStorage;
+    private record PdfLineItem(string Description, decimal? Quantity, decimal? UnitPrice, decimal? Total);
+    private class StoredLineItem
+    {
+        public string? Description { get; set; }
+        public decimal? Quantity { get; set; }
+        public decimal? UnitPrice { get; set; }
+        public decimal? TotalPrice { get; set; }
+    }
 
     public PdfService(IFileStorage fileStorage)
     {
@@ -23,13 +32,13 @@ public class PdfService
     {
         var fileName = $"invoice_{invoice.Id}.pdf";
         var pdfStream = new MemoryStream();
-        var lineItems = ExtractLineItems(invoice.ServiceDescription);
+        var lineItems = ResolveLineItems(invoice);
 
         var document = template switch
         {
-            InvoicePdfTemplate.Advanced => CreateAdvancedTemplate(invoice, user, lineItems),
-            InvoicePdfTemplate.Elite => CreateEliteTemplate(invoice, user, lineItems),
-            _ => CreateBasicTemplate(invoice, user, lineItems)
+            InvoicePdfTemplate.Advanced => CreateAdvancedTemplate(invoice, user, lineItems, GenerateNotesTitle(invoice)),
+            InvoicePdfTemplate.Elite => CreateEliteTemplate(invoice, user, lineItems, GenerateNotesTitle(invoice)),
+            _ => CreateBasicTemplate(invoice, user, lineItems, GenerateNotesTitle(invoice))
         };
 
         document.GeneratePdf(pdfStream);
@@ -39,11 +48,34 @@ public class PdfService
         return savedPath;
     }
 
-    private static IDocument CreateBasicTemplate(Invoice invoice, User user, IReadOnlyList<string> lineItems)
+    private static string GenerateNotesTitle(Invoice invoice)
+    {
+        var datePart = invoice.InvoiceDate != default
+            ? invoice.InvoiceDate.ToString("dd MMM yyyy")
+            : DateTime.UtcNow.ToString("dd MMM yyyy");
+
+        string anchor;
+        if (!string.IsNullOrWhiteSpace(invoice.CustomerName))
+        {
+            anchor = invoice.CustomerName.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(invoice.ServiceDescription))
+        {
+            anchor = $"Ref {invoice.Id.ToString("N")[..6].ToUpperInvariant()}";
+        }
+        else
+        {
+            anchor = invoice.Id.ToString("N")[..6].ToUpperInvariant();
+        }
+
+        return $"Notes • {datePart} • {anchor}";
+    }
+
+    private static IDocument CreateBasicTemplate(Invoice invoice, User user, IReadOnlyList<PdfLineItem> lineItems, string notesTitle)
     {
         var billedTo = string.IsNullOrWhiteSpace(invoice.CustomerName)
-            ? "Not specified"
-            : invoice.CustomerName;
+            ? null
+            : invoice.CustomerName.Trim();
         var businessName = user.CompanyName ?? user.Email;
 
         return Document.Create(container =>
@@ -74,12 +106,15 @@ public class PdfService
                                 sender.Item().Text(user.Email);
                             });
 
-                            row.RelativeItem().Column(recipient =>
+                            if (!string.IsNullOrWhiteSpace(billedTo))
                             {
-                                recipient.Spacing(4);
-                                recipient.Item().Text("To").Bold();
-                                recipient.Item().Text(billedTo);
-                            });
+                                row.RelativeItem().Column(recipient =>
+                                {
+                                    recipient.Spacing(4);
+                                    recipient.Item().Text("To").Bold();
+                                    recipient.Item().Text(billedTo);
+                                });
+                            }
                         });
                     });
 
@@ -95,23 +130,38 @@ public class PdfService
                         column.Item().Column(itemsColumn =>
                         {
                             itemsColumn.Spacing(6);
-                            itemsColumn.Item().Text("Items sold").Bold();
+                            itemsColumn.Item().Text(notesTitle).Bold();
 
                             if (lineItems.Any())
                             {
                                 foreach (var item in lineItems)
                                 {
-                                    itemsColumn.Item()
-                                        .Text(text =>
+                                    itemsColumn.Item().Row(row =>
+                                    {
+                                        row.RelativeItem().Text(text =>
                                         {
-                                            text.Span("• ").FontColor("#2563EB");
-                                            text.Span(item);
+                                            text.Span(item.Description);
+                                            if (item.Quantity.HasValue)
+                                            {
+                                                text.Span($"  × {FormatQuantity(item.Quantity.Value)}").FontColor("#475569");
+                                            }
+                                            if (item.UnitPrice.HasValue)
+                                            {
+                                                text.Span($"  @ {item.UnitPrice.Value:F2} {invoice.Currency}")
+                                                    .FontColor("#475569");
+                                            }
                                         });
+                                        if (item.Total.HasValue)
+                                        {
+                                            row.AutoItem().Text($"{item.Total.Value:F2} {invoice.Currency}")
+                                                .FontColor("#2563EB");
+                                        }
+                                    });
                                 }
                             }
                             else
                             {
-                                itemsColumn.Item().Text("No individual items were provided.").Italic();
+                                itemsColumn.Item().Text("No notes were provided.").Italic();
                             }
                         });
 
@@ -136,11 +186,11 @@ public class PdfService
         });
     }
 
-    private static IDocument CreateAdvancedTemplate(Invoice invoice, User user, IReadOnlyList<string> lineItems)
+    private static IDocument CreateAdvancedTemplate(Invoice invoice, User user, IReadOnlyList<PdfLineItem> lineItems, string notesTitle)
     {
         var billedTo = string.IsNullOrWhiteSpace(invoice.CustomerName)
-            ? "Not specified"
-            : invoice.CustomerName;
+            ? null
+            : invoice.CustomerName.Trim();
         var businessName = user.CompanyName ?? user.Email;
         var invoiceNumber = invoice.Id.ToString("N")[..8].ToUpper();
         var dueDate = invoice.InvoiceDate.AddDays(14);
@@ -185,14 +235,17 @@ public class PdfService
                                 info.Item().Text($"Invoice #: {invoiceNumber}").FontSize(11).FontColor("#334155");
                             });
 
-                            row.RelativeItem().Container().Background("#E0E7FF").Padding(16).Column(recipient =>
+                            if (!string.IsNullOrWhiteSpace(billedTo))
                             {
-                                recipient.Spacing(10);
-                                recipient.Item().Text("Billed to").FontColor("#1E3A8A").Bold();
-                                recipient.Item().Text(billedTo).FontSize(12);
-                                recipient.Item().Text($"Issued: {invoice.InvoiceDate:dd MMM yyyy}").FontSize(11);
-                                recipient.Item().Text($"Due: {dueDate:dd MMM yyyy}").FontSize(11);
-                            });
+                                row.RelativeItem().Container().Background("#E0E7FF").Padding(16).Column(recipient =>
+                                {
+                                    recipient.Spacing(10);
+                                    recipient.Item().Text("Billed to").FontColor("#1E3A8A").Bold();
+                                    recipient.Item().Text(billedTo).FontSize(12);
+                                    recipient.Item().Text($"Issued: {invoice.InvoiceDate:dd MMM yyyy}").FontSize(11);
+                                    recipient.Item().Text($"Due: {dueDate:dd MMM yyyy}").FontSize(11);
+                                });
+                            }
                         });
 
                         column.Item().Row(row =>
@@ -201,27 +254,41 @@ public class PdfService
                             row.RelativeItem().Container().Border(1).BorderColor("#CBD5F5").Padding(16).Column(items =>
                             {
                                 items.Spacing(12);
-                                items.Item().Row(header =>
-                                {
-                                    header.RelativeItem().Text("Service description").Bold().FontColor("#1E3A8A");
-                                    header.ConstantItem(120).AlignRight().Text("Status").Bold().FontColor("#1E3A8A");
-                                });
+                                items.Item().Text(notesTitle).Bold().FontColor("#1E3A8A");
 
                                 if (lineItems.Any())
                                 {
                                     var index = 1;
                                     foreach (var item in lineItems)
                                     {
+                                        var position = index++;
                                         items.Item().Row(rowItem =>
                                         {
-                                            rowItem.RelativeItem().Text($"{index++}. {item}");
-                                            rowItem.ConstantItem(120).AlignRight().Text("Completed").FontColor("#22C55E");
+                                            rowItem.RelativeItem().Text(text =>
+                                            {
+                                                text.Span($"{position}. {item.Description}");
+                                                if (item.Quantity.HasValue)
+                                                {
+                                                    text.Span($"  × {FormatQuantity(item.Quantity.Value)}").FontColor("#475569");
+                                                }
+                                                if (item.UnitPrice.HasValue)
+                                                {
+                                                    text.Span($"  @ {item.UnitPrice.Value:F2} {invoice.Currency}")
+                                                        .FontColor("#475569");
+                                                }
+                                            });
+                                            if (item.Total.HasValue)
+                                            {
+                                                rowItem.AutoItem().Text($"{item.Total.Value:F2} {invoice.Currency}")
+                                                    .FontColor("#1E3A8A")
+                                                    .Bold();
+                                            }
                                         });
                                     }
                                 }
                                 else
                                 {
-                                    items.Item().Text("No detailed services were provided.").Italic();
+                                    items.Item().Text("No notes were provided.").Italic();
                                 }
                             });
 
@@ -280,11 +347,11 @@ public class PdfService
         });
     }
 
-    private static IDocument CreateEliteTemplate(Invoice invoice, User user, IReadOnlyList<string> lineItems)
+    private static IDocument CreateEliteTemplate(Invoice invoice, User user, IReadOnlyList<PdfLineItem> lineItems, string notesTitle)
     {
         var billedTo = string.IsNullOrWhiteSpace(invoice.CustomerName)
-            ? "Not specified"
-            : invoice.CustomerName;
+            ? null
+            : invoice.CustomerName.Trim();
         var businessName = user.CompanyName ?? "InvoiceEasy Elite";
         var shortInvoiceId = invoice.Id.ToString("N")[..8].ToUpper();
         var dueDate = invoice.InvoiceDate.AddDays(7);
@@ -332,13 +399,17 @@ public class PdfService
 
                     column.Item().Row(row =>
                     {
-                        row.RelativeItem().Container().Background("#1E293B").Padding(16).Column(info =>
+                        if (!string.IsNullOrWhiteSpace(billedTo))
                         {
-                            info.Spacing(8);
-                            info.Item().Text("Client").FontColor("#38BDF8").SemiBold();
-                            info.Item().Text(billedTo).FontSize(13);
-                            info.Item().Text(user.Email).FontSize(11).FontColor("#94A3B8");
-                        });
+                            row.RelativeItem().Container().Background("#1E293B").Padding(16).Column(info =>
+                            {
+                                info.Spacing(8);
+                                info.Item().Text("Client").FontColor("#38BDF8").SemiBold();
+                                info.Item().Text(billedTo).FontSize(13);
+                                info.Item().Text(user.Email).FontSize(11).FontColor("#94A3B8");
+                            });
+                        }
+
                         row.RelativeItem().Container().Background("#1E293B").Padding(16).Column(info =>
                         {
                             info.Spacing(8);
@@ -379,7 +450,7 @@ public class PdfService
                     column.Item().Column(list =>
                     {
                         list.Spacing(12);
-                        list.Item().Text("Deliverables overview")
+                        list.Item().Text(notesTitle)
                             .FontSize(16)
                             .FontColor("#38BDF8")
                             .SemiBold();
@@ -401,16 +472,36 @@ public class PdfService
                                             .Bold();
                                         row.RelativeItem().Column(card =>
                                         {
-                                            card.Item().Text(item).FontSize(13);
-                                            card.Item().Text("Premium tracking enabled").FontSize(10).FontColor("#94A3B8");
+                                            card.Item().Text(item.Description).FontSize(13);
+                                            if (item.Quantity.HasValue || item.UnitPrice.HasValue)
+                                            {
+                                                card.Item().Text(text =>
+                                                {
+                                                    if (item.Quantity.HasValue)
+                                                    {
+                                                        text.Span($"×{FormatQuantity(item.Quantity.Value)}").FontColor("#94A3B8").FontSize(11);
+                                                    }
+                                                    if (item.UnitPrice.HasValue)
+                                                    {
+                                                        if (item.Quantity.HasValue) text.Span(" · ").FontSize(11).FontColor("#94A3B8");
+                                                        text.Span($"{item.UnitPrice.Value:F2} {invoice.Currency} ea").FontColor("#94A3B8").FontSize(11);
+                                                    }
+                                                });
+                                            }
                                         });
+                                        if (item.Total.HasValue)
+                                        {
+                                            row.AutoItem().Text($"{item.Total.Value:F2} {invoice.Currency}")
+                                                .FontColor("#38BDF8")
+                                                .Bold();
+                                        }
                                     });
                                 }
                             });
                         }
                         else
                         {
-                            list.Item().Container().Background("#1E293B").Padding(16).Text("No deliverables listed. Elite clients usually attach detailed scopes here.")
+                            list.Item().Container().Background("#1E293B").Padding(16).Text("No notes captured for this receipt.")
                                 .FontSize(12)
                                 .FontColor("#E2E8F0");
                         }
@@ -451,10 +542,51 @@ public class PdfService
         });
     }
 
-    private static IReadOnlyList<string> ExtractLineItems(string serviceDescription)
+    private static IReadOnlyList<PdfLineItem> ResolveLineItems(Invoice invoice)
+    {
+        var stored = DeserializeStoredLineItems(invoice.LineItemsJson);
+        if (stored.Count > 0)
+        {
+            return stored;
+        }
+
+        return ExtractLineItems(invoice.ServiceDescription);
+    }
+
+    private static List<PdfLineItem> DeserializeStoredLineItems(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new List<PdfLineItem>();
+        }
+
+        try
+        {
+            var stored = JsonSerializer.Deserialize<List<StoredLineItem>>(json);
+            if (stored == null)
+            {
+                return new List<PdfLineItem>();
+            }
+
+            return stored
+                .Where(i => !string.IsNullOrWhiteSpace(i.Description))
+                .Select(i => new PdfLineItem(
+                    i.Description!.Trim(),
+                    i.Quantity,
+                    i.UnitPrice,
+                    i.TotalPrice))
+                .ToList();
+        }
+        catch
+        {
+            return new List<PdfLineItem>();
+        }
+    }
+
+    private static IReadOnlyList<PdfLineItem> ExtractLineItems(string serviceDescription)
     {
         if (string.IsNullOrWhiteSpace(serviceDescription))
-            return Array.Empty<string>();
+            return Array.Empty<PdfLineItem>();
 
         var separators = new[] { "\r\n", "\n", ";", "•" };
 
@@ -462,13 +594,19 @@ public class PdfService
             .Split(separators, StringSplitOptions.RemoveEmptyEntries)
             .Select(i => i.Replace("•", string.Empty).Trim())
             .Where(i => !string.IsNullOrWhiteSpace(i))
+            .Select(text => new PdfLineItem(text, null, null, null))
             .ToList();
 
         if (items.Count == 0)
         {
-            items.Add(serviceDescription.Trim());
+            items.Add(new PdfLineItem(serviceDescription.Trim(), null, null, null));
         }
 
         return items;
+    }
+
+    private static string FormatQuantity(decimal value)
+    {
+        return value % 1 == 0 ? value.ToString("0") : value.ToString("0.##");
     }
 }

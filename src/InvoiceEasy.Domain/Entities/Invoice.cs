@@ -10,8 +10,8 @@ public class Invoice
     public string Currency { get; set; } = "EUR";
     public DateOnly InvoiceDate { get; set; }
     public string? PdfPath { get; set; }
+    public string? LineItemsJson { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public User User { get; set; } = null!;
 }
-
