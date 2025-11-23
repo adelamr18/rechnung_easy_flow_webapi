@@ -17,6 +17,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Expense> Expenses { get; set; }
     public DbSet<Payment> Payments { get; set; }
     public DbSet<Receipt> Receipts { get; set; }
+    public DbSet<Feedback> Feedbacks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -75,6 +76,18 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.UserId);
             entity.HasOne(e => e.User)
                   .WithMany(u => u.Payments)
+                  .HasForeignKey(e => e.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Feedback>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.UserId);
+            entity.Property(e => e.Message).HasColumnType("text");
+            entity.Property(e => e.CreatedAt).HasColumnType("timestamp with time zone");
+            entity.HasOne(e => e.User)
+                  .WithMany(u => u.FeedbackEntries)
                   .HasForeignKey(e => e.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
         });

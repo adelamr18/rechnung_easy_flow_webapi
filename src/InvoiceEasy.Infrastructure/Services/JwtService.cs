@@ -13,7 +13,7 @@ public class JwtService
     private readonly string _secretKey;
     private readonly string _issuer;
     private readonly string _audience;
-    private readonly int _accessTokenMinutes;
+    private readonly TimeSpan _accessTokenLifetime;
     private readonly int _refreshTokenDays;
 
     public JwtService(IConfiguration configuration)
@@ -21,7 +21,7 @@ public class JwtService
         _secretKey = configuration["JWT_SECRET"] ?? throw new InvalidOperationException("JWT_SECRET not configured");
         _issuer = configuration["JWT_ISSUER"] ?? "InvoiceEasy";
         _audience = configuration["JWT_AUDIENCE"] ?? "InvoiceEasy";
-        _accessTokenMinutes = int.Parse(configuration["JWT_ACCESS_TOKEN_TTL"] ?? "15");
+        _accessTokenLifetime = ResolveAccessTokenLifetime(configuration);
         _refreshTokenDays = int.Parse(configuration["JWT_REFRESH_TOKEN_TTL"] ?? "30");
     }
 
@@ -41,7 +41,7 @@ public class JwtService
             issuer: _issuer,
             audience: _audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_accessTokenMinutes),
+            expires: DateTime.UtcNow.Add(_accessTokenLifetime),
             signingCredentials: credentials
         );
 
@@ -80,5 +80,20 @@ public class JwtService
     }
 
     public int GetRefreshTokenDays() => _refreshTokenDays;
-}
+    private static TimeSpan ResolveAccessTokenLifetime(IConfiguration configuration)
+    {
+        var ttlSecondsRaw = configuration["JWT_ACCESS_TOKEN_TTL_SECONDS"];
+        if (!string.IsNullOrWhiteSpace(ttlSecondsRaw) && double.TryParse(ttlSecondsRaw, out var seconds) && seconds > 0)
+        {
+            return TimeSpan.FromSeconds(seconds);
+        }
 
+        var ttlMinutesRaw = configuration["JWT_ACCESS_TOKEN_TTL"] ?? "15";
+        if (!double.TryParse(ttlMinutesRaw, out var minutes) || minutes <= 0)
+        {
+            minutes = 15;
+        }
+
+        return TimeSpan.FromMinutes(minutes);
+    }
+}

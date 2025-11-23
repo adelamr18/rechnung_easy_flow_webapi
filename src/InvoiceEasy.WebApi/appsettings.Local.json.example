@@ -5,7 +5,8 @@
   "JWT_SECRET": "your-secret-key-minimum-32-characters-long-for-security",
   "JWT_ISSUER": "InvoiceEasy",
   "JWT_AUDIENCE": "InvoiceEasy",
-  "JWT_ACCESS_TOKEN_TTL": "15",
+  "JWT_ACCESS_TOKEN_TTL_SECONDS": "10800",
+  "JWT_ACCESS_TOKEN_TTL": "180",
   "JWT_REFRESH_TOKEN_TTL": "30",
   "BASE_URL": "http://localhost:5000",
   "FRONTEND_URL": "http://localhost:5173;http://localhost:8080",
@@ -19,7 +20,8 @@
   "Logging": {
     "LogLevel": {
       "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
+      "Microsoft.AspNetCore": "Warning",
+      "Microsoft.EntityFrameworkCore.Database.Command": "Warning"
     }
   },
   "AllowedHosts": "*"

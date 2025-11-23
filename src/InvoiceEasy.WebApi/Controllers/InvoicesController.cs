@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -51,11 +52,28 @@ public class InvoicesController : ControllerBase
         var utcNow = DateTime.UtcNow;
         var startOfMonth = new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         
+        string? betaWarning = null;
+        var needsUserUpdate = false;
+
         if (!InvoiceControllerHelpers.PlanAllowsUnlimitedInvoices(user.Plan))
         {
             var count = await _invoiceRepository.CountByUserIdAndMonthAsync(userId, startOfMonth);
-            if (count >= InvoiceControllerHelpers.GetInvoiceLimit(user.Plan))
+            var limit = InvoiceControllerHelpers.GetInvoiceLimit(user.Plan);
+            if (count >= limit)
+            {
                 return BadRequest(new { error = "Invoice quota exceeded. Please upgrade your plan." });
+            }
+
+            var softLimit = InvoiceControllerHelpers.GetSoftInvoiceLimit(user.Plan);
+            if (count >= softLimit)
+            {
+                betaWarning = InvoiceControllerHelpers.GetBetaWarning(user.Plan);
+                if (!user.StarterLimitReached)
+                {
+                    user.StarterLimitReached = true;
+                    needsUserUpdate = true;
+                }
+            }
         }
 
         var invoice = new Domain.Entities.Invoice
@@ -88,6 +106,17 @@ public class InvoicesController : ControllerBase
             await _invoiceRepository.UpdateAsync(invoice);
         }
 
+        if (string.Equals(user.Plan, "pro-beta", StringComparison.OrdinalIgnoreCase))
+        {
+            user.ProBetaInvoiceCount += 1;
+            needsUserUpdate = true;
+        }
+
+        if (needsUserUpdate)
+        {
+            await _userRepository.UpdateAsync(user);
+        }
+
         return Created($"/api/invoices/{invoice.Id}", new InvoiceResponse
         {
             Id = invoice.Id,
@@ -98,7 +127,11 @@ public class InvoicesController : ControllerBase
             InvoiceDate = invoice.InvoiceDate,
             DownloadUrl = downloadUrl,
             Items = InvoiceControllerHelpers.DeserializeLineItems(invoice.LineItemsJson),
-            CreatedAt = invoice.CreatedAt
+            CreatedAt = invoice.CreatedAt,
+            Meta = betaWarning == null ? null : new Dictionary<string, string>
+            {
+                { "betaWarning", betaWarning }
+            }
         });
     }
 

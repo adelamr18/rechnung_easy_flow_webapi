@@ -31,6 +31,7 @@ public static class InvoiceControllerHelpers
         {
             "elite" => InvoicePdfTemplate.Elite,
             "pro" => InvoicePdfTemplate.Advanced,
+            "pro-beta" => InvoicePdfTemplate.Advanced,
             _ => null
         };
     }
@@ -42,6 +43,7 @@ public static class InvoiceControllerHelpers
         {
             "elite" => InvoicePdfTemplate.Elite,
             "pro" => InvoicePdfTemplate.Advanced,
+            "pro-beta" => InvoicePdfTemplate.Advanced,
             _ => InvoicePdfTemplate.Basic
         };
 
@@ -67,6 +69,12 @@ public static class InvoiceControllerHelpers
                 "basic" => InvoicePdfTemplate.Basic,
                 _ => defaultTemplate
             },
+            "pro-beta" => normalizedRequest switch
+            {
+                "advanced" => InvoicePdfTemplate.Advanced,
+                "basic" => InvoicePdfTemplate.Basic,
+                _ => defaultTemplate
+            },
             _ => InvoicePdfTemplate.Basic
         };
     }
@@ -76,8 +84,9 @@ public static class InvoiceControllerHelpers
         var normalized = (plan ?? "starter").ToLowerInvariant();
         return normalized switch
         {
-            "pro" => true,
             "elite" => true,
+            "pro-beta" => true,
+            "pro" => true,
             _ => false
         };
     }
@@ -87,10 +96,26 @@ public static class InvoiceControllerHelpers
         var normalized = (plan ?? "starter").ToLowerInvariant();
         return normalized switch
         {
+            "starter" => 100,
+            "free" => 100,
+            _ => 100
+        };
+    }
+
+    public static int GetSoftInvoiceLimit(string? plan)
+    {
+        var normalized = (plan ?? "starter").ToLowerInvariant();
+        return normalized switch
+        {
             "starter" => 5,
             "free" => 5,
             _ => 5
         };
+    }
+
+    public static string GetBetaWarning(string? plan)
+    {
+        return "beta.noticeStrong";
     }
 
     public static string? SerializeLineItems(List<InvoiceLineItemDto>? items)

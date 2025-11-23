@@ -25,6 +25,7 @@ public class InvoiceResponse
     public string? DownloadUrl { get; set; }
     public List<InvoiceLineItemDto>? Items { get; set; }
     public DateTime CreatedAt { get; set; }
+    public Dictionary<string, string>? Meta { get; set; }
 }
 
 public class InvoiceLineItemDto
