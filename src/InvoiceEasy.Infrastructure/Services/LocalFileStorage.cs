@@ -12,6 +12,7 @@ public class LocalFileStorage : IFileStorage
         _rootPath = rootPath;
         Directory.CreateDirectory(Path.Combine(_rootPath, "invoices"));
         Directory.CreateDirectory(Path.Combine(_rootPath, "receipts"));
+        Directory.CreateDirectory(Path.Combine(_rootPath, "backups"));
     }
 
     public async Task<string> SaveFileAsync(Stream fileStream, string fileName, string folder)
@@ -59,4 +60,3 @@ public class LocalFileStorage : IFileStorage
         return string.Join("_", fileName.Split(invalidChars, StringSplitOptions.RemoveEmptyEntries));
     }
 }
-

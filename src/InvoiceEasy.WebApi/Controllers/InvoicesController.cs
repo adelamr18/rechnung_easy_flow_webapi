@@ -1,3 +1,6 @@
+using System.IO;
+using System.Text;
+using System.Text.Json;
 using InvoiceEasy.Domain.Enums;
 using InvoiceEasy.Domain.Interfaces;
 using InvoiceEasy.Domain.Interfaces.Services;
@@ -78,6 +81,7 @@ public class InvoicesController : ControllerBase
             invoice.PdfPath = pdfPath;
             await _invoiceRepository.UpdateAsync(invoice);
             downloadUrl = $"{baseUrl}/api/invoices/{invoice.Id}/pdf";
+            await CreateEliteBackupAsync(invoice, user);
         }
         else
         {
@@ -152,6 +156,7 @@ public class InvoicesController : ControllerBase
 
         invoice.PdfPath = pdfPath;
         await _invoiceRepository.UpdateAsync(invoice);
+        await CreateEliteBackupAsync(invoice, user);
 
         var downloadUrl = $"{InvoiceControllerHelpers.ResolveBaseUrl(Request, _configuration)}/api/invoices/{invoice.Id}/pdf";
 
@@ -224,6 +229,44 @@ public class InvoicesController : ControllerBase
         {
             return StatusCode(500, new { error = $"Invoice analysis failed: {ex.Message}" });
         }
+    }
+
+    private async Task CreateEliteBackupAsync(Domain.Entities.Invoice invoice, Domain.Entities.User user)
+    {
+        if (!string.Equals(user.Plan, "elite", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var items = InvoiceControllerHelpers.DeserializeLineItems(invoice.LineItemsJson);
+        var payload = new
+        {
+            InvoiceId = invoice.Id,
+            invoice.CustomerName,
+            invoice.ServiceDescription,
+            invoice.Amount,
+            invoice.Currency,
+            invoice.InvoiceDate,
+            invoice.CreatedAt,
+            invoice.PdfPath,
+            User = new
+            {
+                user.Id,
+                user.CompanyName,
+                user.Email
+            },
+            Items = items
+        };
+
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+
+        await using var memory = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        var folder = Path.Combine("backups", invoice.UserId.ToString());
+        var fileName = $"invoice_{invoice.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}.json";
+        await _fileStorage.SaveFileAsync(memory, fileName, folder);
     }
 
 }

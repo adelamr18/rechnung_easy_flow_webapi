@@ -48,6 +48,7 @@ public class PaymentsController : ControllerBase
                     PriceData = new SessionLineItemPriceDataOptions
                     {
                         Currency = "eur",
+                        UnitAmount = 1000,
                         ProductData = new SessionLineItemPriceDataProductDataOptions
                         {
                             Name = "InvoiceEasy Pro",
@@ -99,6 +100,7 @@ public class PaymentsController : ControllerBase
                     PriceData = new SessionLineItemPriceDataOptions
                     {
                         Currency = "eur",
+                        UnitAmount = 2000,
                         ProductData = new SessionLineItemPriceDataProductDataOptions
                         {
                             Name = "InvoiceEasy Elite",

@@ -33,12 +33,13 @@ public class PdfService
         var fileName = $"invoice_{invoice.Id}.pdf";
         var pdfStream = new MemoryStream();
         var lineItems = ResolveLineItems(invoice);
+        var paymentDate = DateTime.UtcNow;
 
         var document = template switch
         {
-            InvoicePdfTemplate.Advanced => CreateAdvancedTemplate(invoice, user, lineItems, GenerateNotesTitle(invoice)),
-            InvoicePdfTemplate.Elite => CreateEliteTemplate(invoice, user, lineItems, GenerateNotesTitle(invoice)),
-            _ => CreateBasicTemplate(invoice, user, lineItems, GenerateNotesTitle(invoice))
+            InvoicePdfTemplate.Advanced => CreateAdvancedTemplate(invoice, user, lineItems, GenerateNotesTitle(invoice), paymentDate),
+            InvoicePdfTemplate.Elite => CreateEliteTemplate(invoice, user, lineItems, GenerateNotesTitle(invoice), paymentDate),
+            _ => CreateBasicTemplate(invoice, user, lineItems, GenerateNotesTitle(invoice), paymentDate)
         };
 
         document.GeneratePdf(pdfStream);
@@ -71,7 +72,12 @@ public class PdfService
         return $"Notes • {datePart} • {anchor}";
     }
 
-    private static IDocument CreateBasicTemplate(Invoice invoice, User user, IReadOnlyList<PdfLineItem> lineItems, string notesTitle)
+    private static IDocument CreateBasicTemplate(
+        Invoice invoice,
+        User user,
+        IReadOnlyList<PdfLineItem> lineItems,
+        string notesTitle,
+        DateTime paymentDate)
     {
         var billedTo = string.IsNullOrWhiteSpace(invoice.CustomerName)
             ? null
@@ -123,9 +129,18 @@ public class PdfService
                     .Column(column =>
                     {
                         column.Spacing(12);
-                        column.Item().Text($"Invoice Date: {invoice.InvoiceDate:dd.MM.yyyy}")
-                            .FontSize(13)
-                            .Bold();
+                        column.Item().Column(details =>
+                        {
+                            details.Item().Text($"Invoice Date: {invoice.InvoiceDate:dd.MM.yyyy}")
+                                .FontSize(13)
+                                .Bold();
+                            details.Item().Text("Payment Status: Payment accepted")
+                                .FontSize(11)
+                                .FontColor("#64748B");
+                            details.Item().Text($"Payment Date: {paymentDate:dd.MM.yyyy}")
+                                .FontSize(11)
+                                .FontColor("#64748B");
+                        });
 
                         column.Item().Column(itemsColumn =>
                         {
@@ -171,7 +186,7 @@ public class PdfService
 
                         column.Item().Container().Background("#F1F5F9").Padding(10).Column(box =>
                         {
-                            box.Item().Text("Want richer PDFs? Upgrade to Pro or Elite to unlock detailed breakdowns, payment instructions, and premium branding.")
+                            box.Item().Text("Want richer PDFs? Upgrade to Pro or Elite to unlock detailed breakdowns, richer payment summaries, and premium branding.")
                                 .FontSize(10)
                                 .FontColor("#475569");
                         });
@@ -186,16 +201,21 @@ public class PdfService
         });
     }
 
-    private static IDocument CreateAdvancedTemplate(Invoice invoice, User user, IReadOnlyList<PdfLineItem> lineItems, string notesTitle)
+    private static IDocument CreateAdvancedTemplate(
+        Invoice invoice,
+        User user,
+        IReadOnlyList<PdfLineItem> lineItems,
+        string notesTitle,
+        DateTime paymentDate)
     {
         var billedTo = string.IsNullOrWhiteSpace(invoice.CustomerName)
             ? null
             : invoice.CustomerName.Trim();
         var businessName = user.CompanyName ?? user.Email;
         var invoiceNumber = invoice.Id.ToString("N")[..8].ToUpper();
-        var dueDate = invoice.InvoiceDate.AddDays(14);
         var paymentReference = $"INV-{invoice.InvoiceDate:yyyyMMdd}-{invoiceNumber[..4]}";
         var planLabel = (user.Plan ?? "pro").ToUpperInvariant();
+        var paymentStatus = "Payment accepted";
 
         return Document.Create(container =>
         {
@@ -243,7 +263,7 @@ public class PdfService
                                     recipient.Item().Text("Billed to").FontColor("#1E3A8A").Bold();
                                     recipient.Item().Text(billedTo).FontSize(12);
                                     recipient.Item().Text($"Issued: {invoice.InvoiceDate:dd MMM yyyy}").FontSize(11);
-                                    recipient.Item().Text($"Due: {dueDate:dd MMM yyyy}").FontSize(11);
+                                    recipient.Item().Text($"Payment date: {paymentDate:dd MMM yyyy}").FontSize(11);
                                 });
                             }
                         });
@@ -301,9 +321,9 @@ public class PdfService
                                     .FontSize(20)
                                     .FontColor(Colors.White)
                                     .Bold();
-                                summary.Item().Text($"Due by {dueDate:dd MMM yyyy}")
+                                summary.Item().Text($"Paid on {paymentDate:dd MMM yyyy}")
                                     .FontColor("#C7D2FE");
-                                summary.Item().Text("Includes itemized breakdown and payment reminders.")
+                                summary.Item().Text("Includes itemized breakdown with confirmed payment.")
                                     .FontSize(10)
                                     .FontColor("#E0E7FF");
                             });
@@ -315,11 +335,13 @@ public class PdfService
                             row.RelativeItem().Container().Background("#F8FAFC").Padding(16).Column(payment =>
                             {
                                 payment.Spacing(8);
-                                payment.Item().Text("Payment instructions").Bold().FontColor("#1E3A8A");
+                                payment.Item().Text("Payment confirmation").Bold().FontColor("#1E3A8A");
+                                payment.Item().Text($"Payment status: {paymentStatus}").FontSize(11).FontColor("#1E3A8A");
+                                payment.Item().Text($"Payment date: {paymentDate:dd MMM yyyy}").FontSize(11).FontColor("#475569");
                                 payment.Item().Text($"Reference: {paymentReference}").FontSize(11);
                                 payment.Item().Text("Bank: InvoiceEasy Demo Bank").FontSize(11);
                                 payment.Item().Text("IBAN: DE00 1234 5678 9000 0000 01 • BIC: INVEDEFFXXX").FontSize(11);
-                                payment.Item().Text("Please settle within 14 days. Late fees may apply.")
+                                payment.Item().Text("Payment received — thank you for your prompt settlement.")
                                     .FontSize(10)
                                     .FontColor("#475569");
                             });
@@ -341,21 +363,26 @@ public class PdfService
                     .Text(text =>
                     {
                         text.Span("InvoiceEasy Pro template • ").FontColor("#1E3A8A");
-                        text.Span("Includes automatic payment instructions & reminders.").FontSize(9);
+                        text.Span("Payment confirmed through InvoiceEasy.").FontSize(9);
                     });
             });
         });
     }
 
-    private static IDocument CreateEliteTemplate(Invoice invoice, User user, IReadOnlyList<PdfLineItem> lineItems, string notesTitle)
+    private static IDocument CreateEliteTemplate(
+        Invoice invoice,
+        User user,
+        IReadOnlyList<PdfLineItem> lineItems,
+        string notesTitle,
+        DateTime paymentDate)
     {
         var billedTo = string.IsNullOrWhiteSpace(invoice.CustomerName)
             ? null
             : invoice.CustomerName.Trim();
         var businessName = user.CompanyName ?? "InvoiceEasy Elite";
         var shortInvoiceId = invoice.Id.ToString("N")[..8].ToUpper();
-        var dueDate = invoice.InvoiceDate.AddDays(7);
         var planLabel = (user.Plan ?? "elite").ToUpperInvariant();
+        var paymentStatus = "Payment accepted";
 
         return Document.Create(container =>
         {
@@ -390,7 +417,7 @@ public class PdfService
                             meta.Item().Text($"Issued {invoice.InvoiceDate:dd MMM yyyy}")
                                 .FontSize(11)
                                 .AlignRight();
-                            meta.Item().Text($"Due in 7 days ({dueDate:dd MMM yyyy})")
+                            meta.Item().Text($"Payment date {paymentDate:dd MMM yyyy}")
                                 .FontSize(11)
                                 .FontColor("#94A3B8")
                                 .AlignRight();
@@ -413,10 +440,10 @@ public class PdfService
                         row.RelativeItem().Container().Background("#1E293B").Padding(16).Column(info =>
                         {
                             info.Spacing(8);
-                            info.Item().Text("Premium features").FontColor("#38BDF8").SemiBold();
-                            info.Item().Text("• Concierge support").FontColor("#E0F2FE").FontSize(11);
-                            info.Item().Text("• Automatic reminders").FontColor("#E0F2FE").FontSize(11);
-                            info.Item().Text("• Branded PDF showcase").FontColor("#E0F2FE").FontSize(11);
+                            info.Item().Text("Elite benefits").FontColor("#38BDF8").SemiBold();
+                            info.Item().Text("• Concierge success manager").FontColor("#E0F2FE").FontSize(11);
+                            info.Item().Text("• Automatic backups").FontColor("#E0F2FE").FontSize(11);
+                            info.Item().Text("• Signature-worthy PDF showcase").FontColor("#E0F2FE").FontSize(11);
                         });
                     });
 
@@ -434,16 +461,15 @@ public class PdfService
                         row.RelativeItem().Container().Background("#1E293B").Padding(18).Column(card =>
                         {
                             card.Item().Text("Payment status").FontColor("#38BDF8").SemiBold();
-                            card.Item().Text("Pending confirmation").FontColor("#E2E8F0");
+                            card.Item().Text(paymentStatus).FontColor("#E2E8F0");
                             card.Item().Text($"Reference: ELITE-{shortInvoiceId}")
                                 .FontSize(11)
                                 .FontColor("#94A3B8");
                         });
                         row.RelativeItem().Container().Background("#1E293B").Padding(18).Column(card =>
                         {
-                            card.Item().Text("Due date").FontColor("#38BDF8").SemiBold();
-                            card.Item().Text(dueDate.ToString("dd MMM yyyy")).FontColor(Colors.White);
-                            card.Item().Text("Priority reminders enabled").FontSize(11).FontColor("#94A3B8");
+                            card.Item().Text("Payment date").FontColor("#38BDF8").SemiBold();
+                            card.Item().Text(paymentDate.ToString("dd MMM yyyy")).FontColor(Colors.White);
                         });
                     });
 
@@ -533,7 +559,7 @@ public class PdfService
                         });
                     });
 
-                    column.Item().Text("Powered by InvoiceEasy Elite • Premium automation, reminders, and concierge success team")
+                    column.Item().Text("Powered by InvoiceEasy Elite • Premium automation and concierge success team")
                         .FontSize(9)
                         .FontColor("#94A3B8")
                         .AlignCenter();
