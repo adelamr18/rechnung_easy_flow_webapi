@@ -31,11 +31,19 @@ public class BetaController : ControllerBase
             return NotFound();
         }
 
-        var message = request.Message?.Trim() ?? string.Empty;
+        var message = request.Message?.Trim();
+        var rating = request.Rating;
+        if (string.IsNullOrWhiteSpace(message) && rating == null)
+        {
+            return BadRequest(new { error = "Feedback message or rating is required." });
+        }
+
         var feedback = new Feedback
         {
             UserId = userId,
-            Message = message
+            Message = message ?? string.Empty,
+            Source = string.IsNullOrWhiteSpace(request.Source) ? "general" : request.Source!,
+            Rating = rating
         };
 
         await _feedbackRepository.AddAsync(feedback);
