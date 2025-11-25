@@ -15,6 +15,15 @@
     "Endpoint": "https://<your-document-intelligence-endpoint>",
     "ApiKey": "<your-document-intelligence-api-key>"
   },
+  "Smtp": {
+    "Host": "smtp.ionos.de",
+    "Port": 587,
+    "EnableTls": true,
+    "Username": "support@invoiceeasy.org",
+    "Password": "<your-ionos-mailbox-password>",
+    "FromEmail": "support@invoiceeasy.org",
+    "FromName": "InvoiceEasy – Beta Team"
+  },
   "STRIPE_SECRET_KEY": "<your-stripe-secret-key>",
   "STRIPE_WEBHOOK_SECRET": "<your-stripe-webhook-secret-or-remove>",
   "Logging": {

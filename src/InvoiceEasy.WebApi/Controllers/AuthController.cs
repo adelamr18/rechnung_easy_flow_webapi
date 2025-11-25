@@ -5,6 +5,7 @@ using InvoiceEasy.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using BCrypt.Net;
+using InvoiceEasy.Domain.Interfaces.Services;
 
 namespace InvoiceEasy.WebApi.Controllers;
 
@@ -15,15 +16,18 @@ public class AuthController : ControllerBase
     private readonly IUserRepository _userRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly JwtService _jwtService;
+    private readonly IEmailService _emailService;
 
     public AuthController(
         IUserRepository userRepository,
         IRefreshTokenRepository refreshTokenRepository,
-        JwtService jwtService)
+        JwtService jwtService,
+        IEmailService emailService)
     {
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _jwtService = jwtService;
+        _emailService = emailService;
     }
 
     [HttpPost("register")]
@@ -57,6 +61,15 @@ public class AuthController : ControllerBase
             Token = refreshToken,
             ExpiresAt = expiresAt
         });
+
+        try
+        {
+            await _emailService.SendWelcomeEmailAsync(user);
+        }
+        catch
+        {
+            // Swallow email errors to avoid blocking signup; add logging if needed.
+        }
 
         return Created("/api/auth/register", new AuthResponse
         {

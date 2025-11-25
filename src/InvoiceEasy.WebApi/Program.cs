@@ -10,6 +10,7 @@ using InvoiceEasy.Infrastructure.Data.Repositories;
 using InvoiceEasy.Infrastructure.Repositories;
 using InvoiceEasy.Infrastructure.Services;
 using InvoiceEasy.WebApi.Middleware;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -18,7 +19,9 @@ using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var jwtSecret = builder.Configuration["JWT_SECRET"] ?? throw new InvalidOperationException("JWT_SECRET not configured");
+var jwtSecret = builder.Configuration["JWT_SECRET"];
+if (string.IsNullOrWhiteSpace(jwtSecret))
+    throw new InvalidOperationException("JWT_SECRET must be provided (env or appsettings).");
 var connectionString = builder.Configuration.GetConnectionString("Default") 
     ?? builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? builder.Configuration["DATABASE_URL"];
@@ -37,6 +40,8 @@ builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IReceiptRepository, ReceiptRepository>();
 builder.Services.AddScoped<IFeedbackRepository, FeedbackRepository>();
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 builder.Services.AddScoped<IFileStorage>(_ => new LocalFileStorage(storageRoot));
 builder.Services.AddScoped<IReceiptService, ReceiptService>();
@@ -71,7 +76,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -133,6 +143,7 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
 app.UseCors("AllowFrontend");
+app.UseMiddleware<ApiKeyMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
