@@ -12,9 +12,11 @@ using InvoiceEasy.Infrastructure.Services;
 using InvoiceEasy.WebApi.Middleware;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Npgsql;
 using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,11 +24,53 @@ var builder = WebApplication.CreateBuilder(args);
 var jwtSecret = builder.Configuration["JWT_SECRET"];
 if (string.IsNullOrWhiteSpace(jwtSecret))
     throw new InvalidOperationException("JWT_SECRET must be provided (env or appsettings).");
-var connectionString = builder.Configuration.GetConnectionString("Default") 
-    ?? builder.Configuration.GetConnectionString("DefaultConnection") 
+
+string NormalizeConnectionString(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return value ?? string.Empty;
+    }
+
+    if (value.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        var uri = new Uri(value);
+        var userInfoParts = uri.UserInfo.Split(':', 2);
+
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.Port,
+            Username = userInfoParts.ElementAtOrDefault(0) ?? string.Empty,
+            Password = userInfoParts.ElementAtOrDefault(1) ?? string.Empty,
+            Database = uri.AbsolutePath.TrimStart('/')
+        };
+
+        var queryParams = QueryHelpers.ParseQuery(uri.Query);
+        foreach (var kvp in queryParams)
+        {
+            builder[kvp.Key] = kvp.Value.LastOrDefault();
+        }
+
+        if (!queryParams.Keys.Any(k => string.Equals(k, "sslmode", StringComparison.OrdinalIgnoreCase)))
+        {
+            builder.SslMode = SslMode.Require;
+        }
+
+        return builder.ConnectionString;
+    }
+
+    return value;
+}
+
+var rawConnectionString = builder.Configuration.GetConnectionString("Default")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection")
     ?? builder.Configuration["DATABASE_URL"];
+
+var connectionString = NormalizeConnectionString(rawConnectionString);
 if (string.IsNullOrEmpty(connectionString))
-    throw new InvalidOperationException("Connection string 'Default' or 'DefaultConnection' not configured in appsettings.json");
+    throw new InvalidOperationException("Connection string 'Default' or 'DefaultConnection' not configured in appsettings.json or environment.");
 
 var storageRoot = builder.Configuration["STORAGE_ROOT"] ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 

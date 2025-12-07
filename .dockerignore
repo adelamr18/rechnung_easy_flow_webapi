@@ -1,0 +1,13 @@
+bin/
+obj/
+**/bin/
+**/obj/
+node_modules/
+npm-debug.log
+yarn-error.log
+.DS_Store
+*.user
+*.suo
+*.tmp
+*.log
+/uploads
