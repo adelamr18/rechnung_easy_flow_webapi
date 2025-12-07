@@ -97,26 +97,13 @@ public class AuthController : ControllerBase
 
             try
             {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await _emailService.SendWelcomeEmailAsync(user);
-                    }
-                    catch (Exception exInner)
-                    {
-                        _logger.LogWarning(
-                            exInner,
-                            "Register async email_delivery=failed trace={TraceId} email={Email}",
-                            traceId, request.Email);
-                    }
-                });
+                await _emailService.SendWelcomeEmailAsync(user);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(
                     ex,
-                    "Register trace={TraceId} email={Email} email_delivery=schedule_failed",
+                    "Register trace={TraceId} email={Email} email_delivery=failed",
                     traceId, request.Email);
             }
 

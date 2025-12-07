@@ -19,7 +19,12 @@ public class EmailService : IEmailService
         _logger = logger;
     }
 
-    public async Task SendWelcomeEmailAsync(User user)
+   public Task SendWelcomeEmailAsync(User user)
+    {
+        return Task.Run(() => SendWelcomeEmailInternal(user));
+    }
+
+    private void SendWelcomeEmailInternal(User user)
     {
         if (string.IsNullOrWhiteSpace(_options.Host) ||
             string.IsNullOrWhiteSpace(_options.Username) ||
@@ -53,20 +58,23 @@ public class EmailService : IEmailService
             EnableSsl = _options.EnableTls,
             Credentials = new NetworkCredential(_options.Username, _options.Password),
             DeliveryMethod = SmtpDeliveryMethod.Network,
-            Timeout = 5000 // 5 seconds
+            Timeout = 15000 // 15 seconds max for the whole operation
         };
 
         try
         {
-            await client.SendMailAsync(message);
-            _logger.LogInformation("EmailService: Welcome email sent successfully to {Email}", user.Email);
+            client.Send(message);
+
+            _logger.LogInformation(
+                "EmailService: Welcome email sent successfully to {Email}",
+                user.Email);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
+            _logger.LogError(
+                ex,
                 "EmailService: Failed to send welcome email to {Email} via {Host}:{Port}",
                 user.Email, _options.Host, _options.Port);
-            throw;
         }
     }
 
