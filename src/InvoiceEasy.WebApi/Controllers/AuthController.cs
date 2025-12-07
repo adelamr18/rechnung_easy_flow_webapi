@@ -6,6 +6,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using BCrypt.Net;
 using InvoiceEasy.Domain.Interfaces.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
+using InvoiceEasy.Infrastructure.Data;
 
 namespace InvoiceEasy.WebApi.Controllers;
 
@@ -17,28 +20,49 @@ public class AuthController : ControllerBase
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly JwtService _jwtService;
     private readonly IEmailService _emailService;
+    private readonly ILogger<AuthController> _logger;
+    private readonly ApplicationDbContext _db;
 
     public AuthController(
         IUserRepository userRepository,
         IRefreshTokenRepository refreshTokenRepository,
         JwtService jwtService,
-        IEmailService emailService)
+        IEmailService emailService,
+        ILogger<AuthController> logger,
+        ApplicationDbContext db)
     {
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _jwtService = jwtService;
         _emailService = emailService;
+        _logger = logger;
+        _db = db;
     }
 
     [HttpPost("register")]
     [AllowAnonymous]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
+        var traceId = HttpContext.TraceIdentifier;
+        _logger.LogInformation("Register attempt trace={TraceId} email={Email} company={Company}",
+            traceId, request.Email, request.CompanyName);
+        await LogRegistrationAsync("start", request.Email, request.CompanyName, traceId, null);
+
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        {
+            _logger.LogWarning("Register failed trace={TraceId} reason=missing-email-or-password email={Email}",
+                traceId, request.Email);
+            await LogRegistrationAsync("invalid", request.Email, request.CompanyName, traceId, "missing email or password");
             return BadRequest(new { error = "Email and password are required" });
+        }
 
         if (await _userRepository.EmailExistsAsync(request.Email))
+        {
+            _logger.LogWarning("Register failed trace={TraceId} reason=email-exists email={Email}",
+                traceId, request.Email);
+            await LogRegistrationAsync("duplicate", request.Email, request.CompanyName, traceId, "email exists");
             return BadRequest(new { error = "Email already exists" });
+        }
 
         var user = new Domain.Entities.User
         {
@@ -68,8 +92,12 @@ public class AuthController : ControllerBase
         }
         catch
         {
-            // Swallow email errors to avoid blocking signup; add logging if needed.
+            _logger.LogWarning("Register trace={TraceId} email={Email} email_delivery=failed", traceId, request.Email);
         }
+
+        _logger.LogInformation("Register success trace={TraceId} userId={UserId} email={Email}",
+            traceId, user.Id, request.Email);
+        await LogRegistrationAsync("success", request.Email, request.CompanyName, traceId, null);
 
         return Created("/api/auth/register", new AuthResponse
         {
@@ -84,6 +112,26 @@ public class AuthController : ControllerBase
                 Plan = user.Plan
             }
         });
+    }
+
+    private async Task LogRegistrationAsync(string status, string? email, string? companyName, string traceId, string? message)
+    {
+        try
+        {
+            await _db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO registration_logs (id, email, company_name, status, message, trace_id, created_at) VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6)",
+                Guid.NewGuid(),
+                email ?? string.Empty,
+                companyName ?? string.Empty,
+                status,
+                message ?? string.Empty,
+                traceId,
+                DateTime.UtcNow);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to write registration log status={Status} email={Email} trace={TraceId}", status, email, traceId);
+        }
     }
 
     [HttpPost("login")]
