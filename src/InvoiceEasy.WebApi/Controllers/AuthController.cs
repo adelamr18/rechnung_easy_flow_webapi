@@ -89,9 +89,9 @@ public class AuthController : ControllerBase
             {
                 await _emailService.SendWelcomeEmailAsync(user);
             }
-            catch
+            catch (Exception ex)
             {
-                _logger.LogWarning("Register trace={TraceId} email={Email} email_delivery=failed", traceId, request.Email);
+                _logger.LogWarning(ex, "Register trace={TraceId} email={Email} email_delivery=failed", traceId, request.Email);
             }
 
             _logger.LogInformation("Register success trace={TraceId} userId={UserId} email={Email}",
