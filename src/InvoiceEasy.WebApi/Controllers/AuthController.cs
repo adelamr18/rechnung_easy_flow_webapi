@@ -1,11 +1,11 @@
+using BCrypt.Net;
 using InvoiceEasy.Domain.Interfaces;
+using InvoiceEasy.Domain.Interfaces.Services;
 using InvoiceEasy.Infrastructure.Services;
 using InvoiceEasy.WebApi.DTOs;
 using InvoiceEasy.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using BCrypt.Net;
-using InvoiceEasy.Domain.Interfaces.Services;
 using Microsoft.Extensions.Logging;
 
 namespace InvoiceEasy.WebApi.Controllers;
@@ -39,22 +39,29 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         var traceId = HttpContext.TraceIdentifier;
-        _logger.LogInformation("Register attempt trace={TraceId} email={Email} company={Company}",
+
+        _logger.LogInformation(
+            "Register attempt trace={TraceId} email={Email} company={Company}",
             traceId, request.Email, request.CompanyName);
 
         try
         {
-            if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+            if (string.IsNullOrWhiteSpace(request.Email) ||
+                string.IsNullOrWhiteSpace(request.Password))
             {
-                _logger.LogWarning("Register failed trace={TraceId} reason=missing-email-or-password email={Email}",
+                _logger.LogWarning(
+                    "Register failed trace={TraceId} reason=missing-email-or-password email={Email}",
                     traceId, request.Email);
+
                 return BadRequest(new { error = "Email and password are required" });
             }
 
             if (await _userRepository.EmailExistsAsync(request.Email))
             {
-                _logger.LogWarning("Register failed trace={TraceId} reason=email-exists email={Email}",
+                _logger.LogWarning(
+                    "Register failed trace={TraceId} reason=email-exists email={Email}",
                     traceId, request.Email);
+
                 return BadRequest(new { error = "Email already exists" });
             }
 
@@ -68,7 +75,9 @@ public class AuthController : ControllerBase
             };
 
             await _userRepository.AddAsync(user);
-            _logger.LogInformation("Register persisted trace={TraceId} userId={UserId} email={Email}",
+
+            _logger.LogInformation(
+                "Register persisted trace={TraceId} userId={UserId} email={Email}",
                 traceId, user.Id, user.Email);
 
             var accessToken = _jwtService.GenerateAccessToken(user);
@@ -82,19 +91,37 @@ public class AuthController : ControllerBase
                 ExpiresAt = expiresAt
             });
 
-            _logger.LogInformation("Register tokens issued trace={TraceId} userId={UserId} refreshExpires={ExpiresAt}",
+            _logger.LogInformation(
+                "Register tokens issued trace={TraceId} userId={UserId} refreshExpires={ExpiresAt}",
                 traceId, user.Id, expiresAt);
 
             try
             {
-                await _emailService.SendWelcomeEmailAsync(user);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _emailService.SendWelcomeEmailAsync(user);
+                    }
+                    catch (Exception exInner)
+                    {
+                        _logger.LogWarning(
+                            exInner,
+                            "Register async email_delivery=failed trace={TraceId} email={Email}",
+                            traceId, request.Email);
+                    }
+                });
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Register trace={TraceId} email={Email} email_delivery=failed", traceId, request.Email);
+                _logger.LogWarning(
+                    ex,
+                    "Register trace={TraceId} email={Email} email_delivery=schedule_failed",
+                    traceId, request.Email);
             }
 
-            _logger.LogInformation("Register success trace={TraceId} userId={UserId} email={Email}",
+            _logger.LogInformation(
+                "Register success trace={TraceId} userId={UserId} email={Email}",
                 traceId, user.Id, request.Email);
 
             return Created("/api/auth/register", new AuthResponse
@@ -113,9 +140,14 @@ public class AuthController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Register failed trace={TraceId} email={Email} company={Company}",
+            _logger.LogError(
+                ex,
+                "Register failed trace={TraceId} email={Email} company={Company}",
                 traceId, request.Email, request.CompanyName);
-            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Registration failed" });
+
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new { error = "Registration failed" });
         }
     }
 
@@ -124,8 +156,11 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         var user = await _userRepository.GetByEmailAsync(request.Email);
+
         if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+        {
             return Unauthorized();
+        }
 
         var accessToken = _jwtService.GenerateAccessToken(user);
         var refreshToken = _jwtService.GenerateRefreshToken();
@@ -160,7 +195,9 @@ public class AuthController : ControllerBase
         var token = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken);
 
         if (token == null || token.ExpiresAt < DateTime.UtcNow)
+        {
             return Unauthorized();
+        }
 
         token.IsRevoked = true;
         await _refreshTokenRepository.UpdateAsync(token);
