@@ -10,8 +10,10 @@ using InvoiceEasy.Infrastructure.Data.Repositories;
 using InvoiceEasy.Infrastructure.Repositories;
 using InvoiceEasy.Infrastructure.Services;
 using InvoiceEasy.WebApi.Middleware;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -21,6 +23,23 @@ using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = null;
+});
+
+builder.Services.Configure<FormOptions>(opts =>
+{
+    opts.MultipartBodyLengthLimit = 500L * 1024 * 1024;
+    opts.ValueLengthLimit = int.MaxValue;
+    opts.MultipartHeadersLengthLimit = int.MaxValue;
+});
+
+builder.Configuration
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true)
+    .AddEnvironmentVariables();
+
 var jwtSecret = builder.Configuration["JWT_SECRET"];
 if (string.IsNullOrWhiteSpace(jwtSecret))
     throw new InvalidOperationException("JWT_SECRET must be provided (env or appsettings).");
@@ -28,9 +47,7 @@ if (string.IsNullOrWhiteSpace(jwtSecret))
 string NormalizeConnectionString(string? value)
 {
     if (string.IsNullOrWhiteSpace(value))
-    {
         return value ?? string.Empty;
-    }
 
     if (value.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
         value.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
@@ -38,7 +55,7 @@ string NormalizeConnectionString(string? value)
         var uri = new Uri(value);
         var userInfoParts = uri.UserInfo.Split(':', 2);
 
-        var builder = new NpgsqlConnectionStringBuilder
+        var csBuilder = new NpgsqlConnectionStringBuilder
         {
             Host = uri.Host,
             Port = uri.Port,
@@ -50,29 +67,36 @@ string NormalizeConnectionString(string? value)
         var queryParams = QueryHelpers.ParseQuery(uri.Query);
         foreach (var kvp in queryParams)
         {
-            builder[kvp.Key] = kvp.Value.LastOrDefault();
+            csBuilder[kvp.Key] = kvp.Value.LastOrDefault();
         }
 
         if (!queryParams.Keys.Any(k => string.Equals(k, "sslmode", StringComparison.OrdinalIgnoreCase)))
         {
-            builder.SslMode = SslMode.Require;
+            csBuilder.SslMode = SslMode.Require;
         }
 
-        return builder.ConnectionString;
+        return csBuilder.ConnectionString;
     }
 
     return value;
 }
 
-var rawConnectionString = builder.Configuration.GetConnectionString("Default")
+var rawConnectionString =
+    builder.Configuration.GetConnectionString("Default")
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
     ?? builder.Configuration["DATABASE_URL"];
 
 var connectionString = NormalizeConnectionString(rawConnectionString);
-if (string.IsNullOrEmpty(connectionString))
-    throw new InvalidOperationException("Connection string 'Default' or 'DefaultConnection' not configured in appsettings.json or environment.");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "Connection string not configured. Set ConnectionStrings:Default (or DefaultConnection) or DATABASE_URL.");
+}
 
-var storageRoot = builder.Configuration["STORAGE_ROOT"] ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
+var storageRoot = builder.Configuration["STORAGE_ROOT"]
+                  ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
@@ -84,6 +108,7 @@ builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IReceiptRepository, ReceiptRepository>();
 builder.Services.AddScoped<IFeedbackRepository, FeedbackRepository>();
+
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
 builder.Services.AddScoped<IEmailService, EmailService>();
 
@@ -98,12 +123,15 @@ builder.Services.AddScoped<PdfService>(sp =>
 builder.Services.AddScoped<JwtService>();
 
 var documentEndpoint = builder.Configuration["DocumentIntelligence:Endpoint"]
-    ?? builder.Configuration["DOCUMENT_INTELLIGENCE_ENDPOINT"];
+                      ?? builder.Configuration["DOCUMENT_INTELLIGENCE_ENDPOINT"];
 var documentKey = builder.Configuration["DocumentIntelligence:ApiKey"]
-    ?? builder.Configuration["DOCUMENT_INTELLIGENCE_KEY"];
-if (!string.IsNullOrWhiteSpace(documentEndpoint) && !string.IsNullOrWhiteSpace(documentKey))
+                  ?? builder.Configuration["DOCUMENT_INTELLIGENCE_KEY"];
+
+if (!string.IsNullOrWhiteSpace(documentEndpoint) &&
+    !string.IsNullOrWhiteSpace(documentKey))
 {
-    builder.Services.AddSingleton(new DocumentIntelligenceClient(new Uri(documentEndpoint), new AzureKeyCredential(documentKey)));
+    builder.Services.AddSingleton(
+        new DocumentIntelligenceClient(new Uri(documentEndpoint), new AzureKeyCredential(documentKey)));
 }
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -112,7 +140,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+            IssuerSigningKey =
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
             ValidateIssuer = false,
             ValidateAudience = false,
             ValidateLifetime = true,
@@ -126,14 +155,16 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .Build();
 });
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "InvoiceEasy API", Version = "v1" });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "JWT Authorization header using the Bearer scheme",
+        Description = "JWT Authorization header using the Bearer scheme. Example: 'Bearer {token}'",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.ApiKey,
@@ -151,12 +182,23 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-var frontendUrlSetting = builder.Configuration["FRONTEND_URL"] ?? "http://localhost:5173;http://localhost:8080";
-var frontendUrls = frontendUrlSetting.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var defaultFrontendUrls =
+    "https://invoiceeasy.org;" +
+    "https://www.invoiceeasy.org;" +
+    "https://<your-netlify-site>.netlify.app;" +
+    "http://localhost:5173;" +
+    "http://localhost:8080";
+
+var frontendUrlSetting = builder.Configuration["FRONTEND_URL"] ?? defaultFrontendUrls;
+
+var frontendUrls = frontendUrlSetting
+    .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
 if (frontendUrls.Length == 0)
 {
     frontendUrls = new[] { "http://localhost:5173" };
 }
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -171,7 +213,8 @@ builder.Services.AddCors(options =>
 var stripeSecretKey = builder.Configuration["STRIPE_SECRET_KEY"];
 if (string.IsNullOrWhiteSpace(stripeSecretKey))
 {
-    throw new InvalidOperationException("STRIPE_SECRET_KEY not configured. Set it to your Stripe test or live secret key.");
+    throw new InvalidOperationException(
+        "STRIPE_SECRET_KEY not configured. Set it to your Stripe test or live secret key.");
 }
 StripeConfiguration.ApiKey = stripeSecretKey;
 
@@ -183,9 +226,16 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
 app.UseSwagger();
 app.UseSwaggerUI();
+
 app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
+
 app.UseCors("AllowFrontend");
 app.UseMiddleware<ApiKeyMiddleware>();
 app.UseAuthentication();

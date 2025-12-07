@@ -75,6 +75,6 @@ public class BetaController : ControllerBase
             await _userRepository.UpdateAsync(user);
         }
 
-        return Ok(new BetaUnlockResponse { Plan = user.Plan });
+        return Ok(new BetaUnlockResponse { Plan = user.Plan ?? "pro-beta" });
     }
 }
