@@ -16,15 +16,22 @@ public class EmailService : IEmailService
         _options = options.Value;
     }
 
-    public async Task SendWelcomeEmailAsync(User user)
+   public async Task SendWelcomeEmailAsync(User user)
     {
         if (string.IsNullOrWhiteSpace(_options.Host) ||
             string.IsNullOrWhiteSpace(_options.Username) ||
             string.IsNullOrWhiteSpace(_options.Password) ||
             string.IsNullOrWhiteSpace(_options.FromEmail))
         {
+            _logger.LogWarning(
+                "EmailService: SMTP not configured, skipping welcome email. Host={Host} Username={Username} FromEmail={FromEmail}",
+                _options.Host, _options.Username, _options.FromEmail);
             return;
         }
+
+        _logger.LogInformation(
+            "EmailService: Sending welcome email to {Email} via {Host}:{Port}",
+            user.Email, _options.Host, _options.Port);
 
         var message = new MailMessage
         {
@@ -32,7 +39,8 @@ public class EmailService : IEmailService
             Subject = "Welcome to InvoiceEasy — Thanks for joining the beta!",
             Body = BuildWelcomeBody(user),
             BodyEncoding = Encoding.UTF8,
-            SubjectEncoding = Encoding.UTF8
+            SubjectEncoding = Encoding.UTF8,
+            IsBodyHtml = false
         };
 
         message.To.Add(new MailAddress(user.Email));
@@ -42,10 +50,21 @@ public class EmailService : IEmailService
             EnableSsl = _options.EnableTls,
             Credentials = new NetworkCredential(_options.Username, _options.Password),
             DeliveryMethod = SmtpDeliveryMethod.Network,
-            Timeout = 5000
+            Timeout = 5000 // 5 seconds
         };
 
-        await client.SendMailAsync(message);
+        try
+        {
+            await client.SendMailAsync(message);
+            _logger.LogInformation("EmailService: Welcome email sent successfully to {Email}", user.Email);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "EmailService: Failed to send welcome email to {Email} via {Host}:{Port}",
+                user.Email, _options.Host, _options.Port);
+            throw;
+        }
     }
 
     private static string BuildWelcomeBody(User user)
