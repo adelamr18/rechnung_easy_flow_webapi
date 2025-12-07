@@ -42,67 +42,81 @@ public class AuthController : ControllerBase
         _logger.LogInformation("Register attempt trace={TraceId} email={Email} company={Company}",
             traceId, request.Email, request.CompanyName);
 
-        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
-        {
-            _logger.LogWarning("Register failed trace={TraceId} reason=missing-email-or-password email={Email}",
-                traceId, request.Email);
-            return BadRequest(new { error = "Email and password are required" });
-        }
-
-        if (await _userRepository.EmailExistsAsync(request.Email))
-        {
-            _logger.LogWarning("Register failed trace={TraceId} reason=email-exists email={Email}",
-                traceId, request.Email);
-            return BadRequest(new { error = "Email already exists" });
-        }
-
-        var user = new Domain.Entities.User
-        {
-            Email = request.Email,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
-            CompanyName = request.CompanyName,
-            Locale = "de",
-            Plan = "starter"
-        };
-
-        await _userRepository.AddAsync(user);
-
-        var accessToken = _jwtService.GenerateAccessToken(user);
-        var refreshToken = _jwtService.GenerateRefreshToken();
-        var expiresAt = DateTime.UtcNow.AddDays(_jwtService.GetRefreshTokenDays());
-
-        await _refreshTokenRepository.AddAsync(new Domain.Entities.RefreshToken
-        {
-            UserId = user.Id,
-            Token = refreshToken,
-            ExpiresAt = expiresAt
-        });
-
         try
         {
-            await _emailService.SendWelcomeEmailAsync(user);
-        }
-        catch
-        {
-            _logger.LogWarning("Register trace={TraceId} email={Email} email_delivery=failed", traceId, request.Email);
-        }
-
-        _logger.LogInformation("Register success trace={TraceId} userId={UserId} email={Email}",
-            traceId, user.Id, request.Email);
-
-        return Created("/api/auth/register", new AuthResponse
-        {
-            AccessToken = accessToken,
-            RefreshToken = refreshToken,
-            User = new UserDto
+            if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
             {
-                Id = user.Id,
-                Email = user.Email,
-                CompanyName = user.CompanyName,
-                Locale = user.Locale,
-                Plan = user.Plan
+                _logger.LogWarning("Register failed trace={TraceId} reason=missing-email-or-password email={Email}",
+                    traceId, request.Email);
+                return BadRequest(new { error = "Email and password are required" });
             }
-        });
+
+            if (await _userRepository.EmailExistsAsync(request.Email))
+            {
+                _logger.LogWarning("Register failed trace={TraceId} reason=email-exists email={Email}",
+                    traceId, request.Email);
+                return BadRequest(new { error = "Email already exists" });
+            }
+
+            var user = new Domain.Entities.User
+            {
+                Email = request.Email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
+                CompanyName = request.CompanyName,
+                Locale = "de",
+                Plan = "starter"
+            };
+
+            await _userRepository.AddAsync(user);
+            _logger.LogInformation("Register persisted trace={TraceId} userId={UserId} email={Email}",
+                traceId, user.Id, user.Email);
+
+            var accessToken = _jwtService.GenerateAccessToken(user);
+            var refreshToken = _jwtService.GenerateRefreshToken();
+            var expiresAt = DateTime.UtcNow.AddDays(_jwtService.GetRefreshTokenDays());
+
+            await _refreshTokenRepository.AddAsync(new Domain.Entities.RefreshToken
+            {
+                UserId = user.Id,
+                Token = refreshToken,
+                ExpiresAt = expiresAt
+            });
+
+            _logger.LogInformation("Register tokens issued trace={TraceId} userId={UserId} refreshExpires={ExpiresAt}",
+                traceId, user.Id, expiresAt);
+
+            try
+            {
+                await _emailService.SendWelcomeEmailAsync(user);
+            }
+            catch
+            {
+                _logger.LogWarning("Register trace={TraceId} email={Email} email_delivery=failed", traceId, request.Email);
+            }
+
+            _logger.LogInformation("Register success trace={TraceId} userId={UserId} email={Email}",
+                traceId, user.Id, request.Email);
+
+            return Created("/api/auth/register", new AuthResponse
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                User = new UserDto
+                {
+                    Id = user.Id,
+                    Email = user.Email,
+                    CompanyName = user.CompanyName,
+                    Locale = user.Locale,
+                    Plan = user.Plan
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Register failed trace={TraceId} email={Email} company={Company}",
+                traceId, request.Email, request.CompanyName);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Registration failed" });
+        }
     }
 
     [HttpPost("login")]
