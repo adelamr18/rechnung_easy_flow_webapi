@@ -1,6 +1,9 @@
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Mail;
 using System.Text;
+using System.Text.Json;
 using InvoiceEasy.Domain.Entities;
 using InvoiceEasy.Domain.Interfaces.Services;
 using Microsoft.Extensions.Logging;
@@ -10,6 +13,8 @@ namespace InvoiceEasy.Infrastructure.Services;
 
 public class EmailService : IEmailService
 {
+    private static readonly HttpClient HttpClient = new();
+
     private readonly ILogger<EmailService> _logger;
     private readonly SmtpOptions _options;
 
@@ -19,12 +24,87 @@ public class EmailService : IEmailService
         _logger = logger;
     }
 
-   public Task SendWelcomeEmailAsync(User user)
+    // Keep your public API exactly as-is, but avoid extra Task.Run wrapping
+    public Task SendWelcomeEmailAsync(User user)
     {
-        return Task.Run(() => SendWelcomeEmailInternal(user));
+        // The internal method is already async and handles its own awaits.
+        // If you want fire-and-forget, do it at the call site (e.g. in the controller).
+        return SendWelcomeEmailInternal(user);
     }
 
-    private void SendWelcomeEmailInternal(User user)
+    private async Task SendWelcomeEmailInternal(User user)
+    {
+        if (!string.IsNullOrWhiteSpace(_options.ApiKey))
+        {
+            await SendWithResendAsync(user);
+            return;
+        }
+
+        await SendWithSmtpAsync(user);
+    }
+
+    private async Task SendWithResendAsync(User user)
+    {
+        if (string.IsNullOrWhiteSpace(_options.FromEmail))
+        {
+            _logger.LogWarning(
+                "EmailService: Resend ApiKey configured but FromEmail is empty. Skipping email.");
+            return;
+        }
+
+        var fromName = _options.FromName ?? "InvoiceEasy – Beta Team";
+        var fromAddress = $"{fromName} <{_options.FromEmail}>";
+
+        _logger.LogInformation(
+            "EmailService: Sending welcome email via Resend to {Email} from {From}",
+            user.Email, fromAddress);
+
+        var bodyText = BuildWelcomeBody(user);
+
+        var payload = new
+        {
+            from = fromAddress,
+            to = new[] { user.Email },
+            subject = "Welcome to InvoiceEasy — Thanks for joining the beta!",
+            text = bodyText
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
+
+        try
+        {
+            using var response = await HttpClient.SendAsync(request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation(
+                    "EmailService: Welcome email sent successfully via Resend to {Email}",
+                    user.Email);
+            }
+            else
+            {
+                var errorText = await response.Content.ReadAsStringAsync();
+                _logger.LogError(
+                    "EmailService: Resend API returned {StatusCode} for {Email}. Body={Body}",
+                    (int)response.StatusCode, user.Email, errorText);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "EmailService: Failed to send welcome email via Resend to {Email}",
+                user.Email);
+        }
+    }
+
+    private async Task SendWithSmtpAsync(User user)
     {
         if (string.IsNullOrWhiteSpace(_options.Host) ||
             string.IsNullOrWhiteSpace(_options.Username) ||
@@ -38,7 +118,7 @@ public class EmailService : IEmailService
         }
 
         _logger.LogInformation(
-            "EmailService: Sending welcome email to {Email} via {Host}:{Port}",
+            "EmailService: Sending welcome email via SMTP to {Email} using {Host}:{Port}",
             user.Email, _options.Host, _options.Port);
 
         var message = new MailMessage
@@ -58,7 +138,7 @@ public class EmailService : IEmailService
             EnableSsl = _options.EnableTls,
             Credentials = new NetworkCredential(_options.Username, _options.Password),
             DeliveryMethod = SmtpDeliveryMethod.Network,
-            Timeout = 15000 // 15 seconds max for the whole operation
+            Timeout = 15000 // 15 seconds
         };
 
         try
@@ -66,16 +146,18 @@ public class EmailService : IEmailService
             client.Send(message);
 
             _logger.LogInformation(
-                "EmailService: Welcome email sent successfully to {Email}",
+                "EmailService: Welcome email sent successfully via SMTP to {Email}",
                 user.Email);
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
-                "EmailService: Failed to send welcome email to {Email} via {Host}:{Port}",
+                "EmailService: Failed to send welcome email via SMTP to {Email} using {Host}:{Port}",
                 user.Email, _options.Host, _options.Port);
         }
+
+        await Task.CompletedTask;
     }
 
     private static string BuildWelcomeBody(User user)
@@ -115,6 +197,7 @@ public class EmailService : IEmailService
 
 public class SmtpOptions
 {
+    public string ApiKey { get; set; } = string.Empty;
     public string Host { get; set; } = string.Empty;
     public int Port { get; set; } = 587;
     public bool EnableTls { get; set; } = true;
