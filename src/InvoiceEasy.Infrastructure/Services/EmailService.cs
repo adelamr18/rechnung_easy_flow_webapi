@@ -41,7 +41,8 @@ public class EmailService : IEmailService
         {
             EnableSsl = _options.EnableTls,
             Credentials = new NetworkCredential(_options.Username, _options.Password),
-            DeliveryMethod = SmtpDeliveryMethod.Network
+            DeliveryMethod = SmtpDeliveryMethod.Network,
+            Timeout = 5000
         };
 
         await client.SendMailAsync(message);
