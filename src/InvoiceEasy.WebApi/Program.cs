@@ -184,7 +184,6 @@ builder.Services.AddSwaggerGen(c =>
 
 var defaultFrontendUrls =
     "https://invoiceeasy.org;" +
-    "https://rechnungeasyflowwebapi-production.up.railway.app/api" +
     "https://www.invoiceeasy.org;" +
     "http://localhost:5173;" +
     "http://localhost:8080";
