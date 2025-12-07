@@ -3,20 +3,23 @@ using System.Net.Mail;
 using System.Text;
 using InvoiceEasy.Domain.Entities;
 using InvoiceEasy.Domain.Interfaces.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace InvoiceEasy.Infrastructure.Services;
 
 public class EmailService : IEmailService
 {
+    private readonly ILogger<EmailService> _logger;
     private readonly SmtpOptions _options;
 
-    public EmailService(IOptions<SmtpOptions> options)
+    public EmailService(IOptions<SmtpOptions> options, ILogger<EmailService> logger)
     {
         _options = options.Value;
+        _logger = logger;
     }
 
-   public async Task SendWelcomeEmailAsync(User user)
+    public async Task SendWelcomeEmailAsync(User user)
     {
         if (string.IsNullOrWhiteSpace(_options.Host) ||
             string.IsNullOrWhiteSpace(_options.Username) ||
