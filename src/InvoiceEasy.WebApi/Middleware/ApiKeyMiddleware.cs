@@ -26,16 +26,8 @@ public class ApiKeyMiddleware
 
         if (string.IsNullOrWhiteSpace(_configuredApiKey))
         {
-            await _next(context);
-            return;
-        }
-
-        var path = context.Request.Path.Value ?? string.Empty;
-
-        if (path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase) ||
-            path.StartsWith("/api/auth", StringComparison.OrdinalIgnoreCase))
-        {
-            await _next(context);
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsync("Server API key not configured.");
             return;
         }
 
@@ -43,6 +35,16 @@ public class ApiKeyMiddleware
             context.Request.Headers[ApiKeyHeaderName].FirstOrDefault() ??
             context.Request.Query["apiKey"].FirstOrDefault() ??
             context.Request.Query["access_token"].FirstOrDefault();
+
+        if (string.IsNullOrEmpty(incomingApiKey))
+        {
+            var auth = context.Request.Headers["Authorization"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(auth) &&
+                auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                incomingApiKey = auth.Substring("Bearer ".Length).Trim();
+            }
+        }
 
         if (string.IsNullOrEmpty(incomingApiKey))
         {
