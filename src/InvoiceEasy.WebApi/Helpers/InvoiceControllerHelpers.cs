@@ -32,7 +32,7 @@ public static class InvoiceControllerHelpers
             "elite" => InvoicePdfTemplate.Elite,
             "pro" => InvoicePdfTemplate.Advanced,
             "pro-beta" => InvoicePdfTemplate.Advanced,
-            _ => null
+            _ => InvoicePdfTemplate.Basic
         };
     }
 

@@ -35,5 +35,14 @@ public class InvoiceRepository : BaseRepository<Invoice>, IInvoiceRepository
                        i.InvoiceDate < DateOnly.FromDateTime(monthEnd))
             .SumAsync(i => i.Amount);
     }
-}
 
+    public async Task<decimal> SumAmountByUserIdAsync(Guid userId)
+    {
+        var total = await _dbSet
+            .Where(i => i.UserId == userId)
+            .Select(i => (decimal?)i.Amount)
+            .SumAsync();
+
+        return total ?? 0m;
+    }
+}

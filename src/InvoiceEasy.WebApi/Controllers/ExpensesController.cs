@@ -87,14 +87,20 @@ public class ExpensesController : ControllerBase
 
         var finalAmount = DetermineExpenseAmount(parsedAmount, processedReceipt);
 
+        var scannedDate = processedReceipt?.TransactionDate;
+        var effectiveDate =
+            !string.IsNullOrEmpty(expenseDateStr) && DateOnly.TryParse(expenseDateStr, out var date)
+                ? date
+                : scannedDate.HasValue
+                    ? DateOnly.FromDateTime(DateTime.SpecifyKind(scannedDate.Value, DateTimeKind.Utc))
+                    : DateOnly.FromDateTime(DateTime.UtcNow);
+
         var expense = new Domain.Entities.Expense
         {
             UserId = userId,
             Amount = finalAmount,
             Note = note,
-            ExpenseDate = !string.IsNullOrEmpty(expenseDateStr) && DateOnly.TryParse(expenseDateStr, out var date) 
-                ? date 
-                : DateOnly.FromDateTime(DateTime.UtcNow)
+            ExpenseDate = effectiveDate
         };
 
         if (processedReceipt != null)
